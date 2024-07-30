@@ -1,0 +1,47 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- given-names: David
+  family-names: Schall
+  email: david.schall@tum.de
+  orcid: 'https://orcid.org/0000-0002-3587-3253'
+  affiliation: University of Edinburgh
+- given-names: Andreas
+  family-names: Sandberg
+  email: andreas.sandberg@arm.com
+  affiliation: Arm Ltd.
+  orcid: 'https://orcid.org/0000-0001-9349-5791'
+- given-names: Boris
+  family-names: Grot
+  email: boris.grot@ed.ac.uk
+  affiliation: University of Edinburgh
+  orcid: 'https://orcid.org/0000-0001-6525-0762'
+title: "The Last-Level Branch Predictor"
+# version: 2.0.4
+# doi: 10.5281/zenodo.1234
+# date-released: 2017-12-18
+# url: "https://github.com/github-linguist/linguist"
+preferred-citation:
+  type: article
+  authors:
+  - given-names: David
+    family-names: Schall
+    email: david.schall@tum.de
+    orcid: 'https://orcid.org/0000-0002-3587-3253'
+    affiliation: University of Edinburgh
+  - given-names: Andreas
+    family-names: Sandberg
+    email: andreas.sandberg@arm.com
+    affiliation: Arm Ltd.
+    orcid: 'https://orcid.org/0000-0001-9349-5791'
+  - given-names: Boris
+    family-names: Grot
+    email: boris.grot@ed.ac.uk
+    affiliation: University of Edinburgh
+    orcid: 'https://orcid.org/0000-0001-6525-0762'
+  # doi: "10.0000/00000"
+  title: "The Last-Level Branch Predictor"
+  year: 2024
