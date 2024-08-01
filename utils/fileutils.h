@@ -83,11 +83,12 @@ class TraceReaderGz
 
 class TraceReaderCSVGz
 {
-    private:
+    protected:
         std::string fileName;
         // std::string delimeter;
         bool binary = false;
         gzFile file = nullptr;
+        bool restart = false;
 
         static const int bufferSize = 1024;
         char buffer[bufferSize];
@@ -155,8 +156,12 @@ class ChampSimTrace : public TraceReaderCSVGz
 
     FILE *trace_file;
     char trace_string[1024];
-    char gunzip_command[1024];
+    // char gunzip_command[1024];
+    std::string gunzip_command;
     input_instr cur_instr, next_instr;
+
+    const bool restart = true;
+    bool reopen(std::string gzfilename);
 
 
   public:

@@ -35,6 +35,8 @@ class BasePredictor {
     virtual void StartTracer(std::string filename) {};
     virtual void tick() {};
     virtual void resetStats() {};
+    virtual void btbMiss() {};
+    virtual void setState(bool warmup=false) {};
 };
 
 

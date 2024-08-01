@@ -25,7 +25,10 @@ add_subdirectory(bpmodels)
 
 ## Create executable
 set(TARGET_NAME predictor)
-set(SOURCES main.cc)
+set(SOURCES
+    main.cc
+    btb/btb.cc
+    )
 
 add_executable(${TARGET_NAME} ${SOURCES})
 

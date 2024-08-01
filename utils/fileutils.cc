@@ -220,7 +220,7 @@ bool ChampSimTrace::open(std::string filename)
         return false;
     }
 
-    std::string gunzip_command(decomp_program + " -dc " + filename);
+    gunzip_command = decomp_program + " -dc " + filename;
 
     trace_file = popen(gunzip_command.c_str(), "r");
     if (trace_file == NULL) {
@@ -235,7 +235,56 @@ bool ChampSimTrace::open(std::string filename)
 
 }
 
+bool ChampSimTrace::reopen(std::string gzfilename)
+{
+
+    // reached end of file for this trace
+    printf("*** Reached end of trace. Repeating trace: %s", gzfilename.c_str());
+
+    // close the trace file and re-open it
+    pclose(trace_file);
+
+    trace_file = popen(gunzip_command.c_str(), "r");
+    if (trace_file == NULL) {
+        printf("\n*** CANNOT REOPEN TRACE FILE ***\n\n");
+        return false;
+    }
+    if (!fread(&next_instr, sizeof(input_instr), 1, trace_file)) {
+        printf("\n*** Cannot read after reopen trace ***\n\n");
+        return false;
+    }
+    return true;
+}
+
+
+bool ChampSimTrace::getNextBranch(branchTrace& bt) {
+
+    int n_skip = 0;
+    while (true) {
+        /* code */
+        cur_instr = next_instr;
+        if (!fread(&next_instr, sizeof(input_instr), 1, trace_file)) {
+
+            if (!restart) {
+                return false;
+            }
+            if (!reopen(gunzip_command)) {
+                return false;
+            }
+        }
+        if (cur_instr.is_branch) {
+            break;
+        }
+        n_skip++;
+    }
+
+    bt.skipped = n_skip;
+    return covertBranch(bt);
+}
+
+
 ChampSimTrace::~ChampSimTrace() { pclose(trace_file); }
+
 
 bool ChampSimTrace::covertBranch(branchTrace& bt) {
 
@@ -337,26 +386,6 @@ bool ChampSimTrace::covertBranch(branchTrace& bt) {
         bt.target = 0;
     }
     return true;
-}
-
-
-bool ChampSimTrace::getNextBranch(branchTrace& bt) {
-
-    int n_skip = 0;
-    while (true) {
-        /* code */
-        cur_instr = next_instr;
-        if (!fread(&next_instr, sizeof(input_instr), 1, trace_file)) {
-            return false;
-        }
-        if (cur_instr.is_branch) {
-            break;
-        }
-        n_skip++;
-    }
-
-    bt.skipped = n_skip;
-    return covertBranch(bt);
 }
 
 

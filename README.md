@@ -12,13 +12,16 @@
 
 
 
-The Last-Level Branch Predictor (LLBP) is a microarchitectural approach that improves branch prediction accuracy through additional high-capacity storage backing the baseline TAGE predictor. The key insight is that LLBP breaks branch predictor state into mulitple program contexts which can be thought of as a call chain. Each context comprises only a small number of patterns and can be prefetched ahead of time. This enables LLBP to store a large number of patterns in a high-capacity structure and prefetch only the patterns for the upcoming contexts into a small, fast structure to overcome the long access latency of the high-capacity structure.
+The Last-Level Branch Predictor (LLBP) is a microarchitectural approach that improves branch prediction accuracy through additional high-capacity storage backing the baseline TAGE predictor. The key insight is that LLBP breaks branch predictor state into mulitple program contexts which can be thought of as a call chain. Each context comprises only a small number of patterns and can be prefetched ahead of time. This enables LLBP to store a large number of patterns in a high-capacity structure and prefetch only the patterns for the upcoming contexts into a small, fast structure to overcome the long access latency of the high-capacity structure (LLBP).
 
 LLBP is presented at [MICRO 2024](https://microarch.org/micro57/).
 
 This repository contains the source code of the branch predictor model used to evaluate LLBP's prediction accuracy. The code is based on the [CBP5 framework](http://www.jilp.org/cbp2016/), but was heavily modified and extended with various statistics to evaluate the performance of LLBP and the baseline TAGE predictor.
 
-> **Note:** This repository contains only the code of the branch predictor model and is not integrated with any CPU model. We are currently working on integrating LLBP with gem5 and will release the code once it is ready.
+The aim of this framwork is to provide a fast way to evaluate different branch predictor configurations and explore the design space of LLBP. It does *not* model the full CPU pipeline but only the branch predictor.
+The framework supports a timing aproximation by clocking the predictor for every taken branch and/or more than 8 executed instructions between branches. While we found that this approximation is reasonable accurage to get understand the impact of late prefetches, it is only a rough estimation. For the exact timing the predictor needs to be integrated with a full CPU simulator like ChampSim or gem5.
+> We are currently working on integrating LLBP with gem5 and will release the code once it is ready.
+
 
 
 ## Prerequisites
