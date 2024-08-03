@@ -104,7 +104,7 @@ struct PCHistoryRegister {
         printf("History");
         for (uint32_t i = 0; i < size; ++i) {
             auto e = history[(head - i) % size];
-            printf("%llu:%d ",e.first, (bool)e.second);
+            printf("%lu:%d ",e.first, (bool)e.second);
         }
         printf("\n");
     }

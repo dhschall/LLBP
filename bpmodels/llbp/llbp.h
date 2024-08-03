@@ -24,23 +24,19 @@
 
 #pragma once
 
-#include <assert.h>
 #include <inttypes.h>
-#include <math.h>
+// #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <vector>
-#include <unordered_set>
 #include <unordered_map>
-#include <stack>
 #include <list>
 #include <queue>
 
 
 #include "bpmodels/tage/tage_scl.h"
 
-#include "utils/fileutils.h"
+// #include "utils/fileutils.h"
 #include "bpmodels/components/counters.h"
 #include "bpmodels/components/cache.h"
 #include "utils/histogram.h"
@@ -74,29 +70,22 @@ class LLBP : public TageSCL {
     void updateStats(bool taken, bool predtaken, uint64_t PC) override;
     void updateGHist(const bool bit) override;
     int allocate(int idx, uint64_t pc, bool taken) override;
-
-    bool tageUpdateL1(uint64_t pc, bool resolveDir);
-    bool isAllias(uint64_t pc, int bank) override {
-        return TageBase::isAllias(pc, bank);
-    }
-
     void resetStats() override;
 
-    void init_predictor();
-    void predictorsize();
 
-    int nBrSinceSwitch = 0;
-    int mispSinceSwitch = 0;
-
-    typedef uint64_t HistInfo;
     typedef uint64_t Key;
     Key KEY[MAXNHIST];  //
 
-    HistInfo makeHistInfo(int histLength, uint histTag) {
-        return ((uint64_t)histTag << 32ULL) | ((uint64_t)histLength);
-    }
 
-    struct HistEntry {
+    /********************************************************************
+     * LLBP Pattern
+     *
+     * Consists of the history length field and the tag.
+     * In the model we concatenate both to form a key.
+     * key = (tag << 10) | length
+     * This simplifies model complexity
+     ******************************************************************/
+    struct Pattern {
       int length;
       uint tag;
       int idx;
@@ -109,105 +98,37 @@ class LLBP : public TageSCL {
       Key key = 0;
       int evicted = 0;
       int evicted_ctx = 0;
-      int lastEvicted = 0;
-      int evictReason = 0;
       uint64_t pc = 0;
-      int firstUseDist = -1;
-      int maxDist = -1;
-    };
-
-    #define MAXHISTSTORE 100
-
-
-    // Prediction part.
-    enum {
-      S1 = TageSCL::LAST_SCL_PROVIDER_TYPE + 1,
-      S1_BASE,
-      S1_TAGE,
-      LAST_LCF_PROVIDER_TYPE = S1_TAGE
     };
 
 
-
-    // S2 ----------------
-    // Second level
-    void L2Predict(uint64_t pc);
-    void L2Update(uint64_t PC, bool resolveDir, bool predDir);
-    bool L2Allocate(int idx, uint64_t pc, bool taken, bool from_l1=false);
-
-    struct Context;
-
-
-    const int CtrWidth;
-    const int ReplCtrWidth;
-    const int CtxReplCtrWidth;
-
-    int hitVal[MAXHISTSTORE+1] = {0};
-    int HitIdx;  // index of the table that provided the longest matching
-                 // prediction
-    HistEntry* L2HitEntry;  // pointer to the entry that provided the longest
-                          // matching prediction
-
-    // Chooser -----------
-
-    bool isNotUseful(bool taken) override;
-    bool isUseful(bool taken) override;
-    void updateL2Usefulness(bool taken);
-
-    unsigned chooseProvider() override;
-
-
-    struct L2PredictorInfo {
-        int pVal;
-        bool pred;
-        unsigned conf;
-        int histLength;
-        bool promoted;
-        bool prefetched;
-
-        bool hit;
-        bool isProvider;
-        bool shorter;
-    } l2;
-
-    bool bim_pred;
-    unsigned bimConf;
-
-    // Context
-
-    const int window = 120;
-    std::list<uint64_t> bbv[10];
-
-    bool updateRuntimeHash(uint64_t pc, OpType type, bool taken);
-    uint64_t calcHash(vector<uint64_t> &vec, int n);
-    uint64_t calcHash(std::list<uint64_t> &vec, int n, int start=0, int shift=0);
-
-
-    uint64_t getCurContext(uint64_t pc);
-
-
-    ///////////////////////////////////////////////////////
-    // LLBP bulk storage
-
-
-    class PatternSet : public BaseCache<uint64_t, HistEntry>{
-    public:
-
+    /********************************************************************
+     * Pattern Set
+     *
+     * The pattern sets are implemented as set associative cache. The
+     * lower bits of the key - to lookup a pattern in the pattern set
+     * - are used for the history length which realizes the four way
+     * associativity. In the constructor we assign each history an
+     * index
+     ******************************************************************/
+    struct PatternSet : public BaseCache<uint64_t, Pattern>{
         PatternSet(size_t max_size, size_t assoc) :
-            BaseCache<uint64_t, HistEntry>(max_size, assoc)
-        {
-        }
+            BaseCache<uint64_t, Pattern>(max_size, assoc)
+        {}
 
-        HistEntry* insert(const uint64_t &key) {
-            return BaseCache<uint64_t, HistEntry>::insert(key);
+        Pattern* insert(const uint64_t &key) {
+            return BaseCache<uint64_t, Pattern>::insert(key);
         }
-
     };
 
-
-    // This is the context structure. It contains all the information
-    // and statistics for a single context.
-    // It also includes the pattern set.
+    /********************************************************************
+     * Program Context
+     *
+     * A program context contains one pattern set and is indexed by
+     * a key formed by hashing W unconditional branches.
+     * This struct contains some additional meta data for replacement
+     * and statistics.
+     ********************************************************************/
     struct Context {
         bool valid;
         uint64_t key;
@@ -219,38 +140,40 @@ class LLBP : public TageSCL {
         uint replace;
         int ctr;
         int usefulPtrns;
-        int lastPFHit;
-        int firstUseDist;
-        int maxDist;
 
+        // The contexts pattern set.
         PatternSet patterns;
 
         Context(uint64_t k, uint64_t p, int n, int assoc)
           : valid(true), key(k), pc(p),
             correct(0), incorrect(0), useful(0), conflict(0),
             replace(0), ctr(0), usefulPtrns(0),
-            lastPFHit(0), firstUseDist(-1), maxDist(-1),
             patterns(n, assoc)
         {}
 
+        // Before a pattern in the pattern set is replaced the sort function
+        // must be called which sorts the patterns from the highest to the
+        // lowest confidence.
         void sortPatters(const uint64_t key) {
             auto& set = patterns.getSet(key);
             set.sort(
-                [](const std::pair<uint64_t, HistEntry>& a, const std::pair<uint64_t, HistEntry>& b)
+                [](const std::pair<uint64_t, Pattern>& a, const std::pair<uint64_t, Pattern>& b)
                 {
                     return abs(center(a.second.ctr)) > abs(center(b.second.ctr));
                 });
         }
-
     };
 
 
-
-    // The LLBPs large high-capacity structure to store pattern sets.
-    // Its implemented as a set associative cache.
-    // The Context directory (CD) can be thought of as the tag array while the
-    // LLBPStorage is the data array. In the implementation there is only
-    // one data structure.
+    /********************************************************************
+     * LLBP Storage
+     *
+     * LLBPs high-capacity structure to store all pattern sets.
+     * It's implemented as a set associative cache.
+     * The Context directory (CD) can be thought of as the tag array while the
+     * LLBPStorage is the data array. In the model, we have only one
+     * structure.
+     ********************************************************************/
     class LLBPStorage : public BaseCache<uint64_t, Context>{
         typedef typename std::pair<uint64_t, Context> key_value_pair_t;
 	    typedef typename std::list<key_value_pair_t>::iterator list_iterator_t;
@@ -265,12 +188,18 @@ class LLBP : public TageSCL {
         {
         }
 
-        // Will create a new context but does not install it
+        // This function creates a new context but does not install it.
         Context* createNew(uint64_t key, uint64_t pc) {
             return new Context(key, pc, n_patterns, _ptrn_assoc);
         }
 
-        Context* insert(uint64_t key, uint64_t pc) {
+        // This function will allocate a new context for the
+        // given key if it does not exist.
+        // It Will return the created context.
+        // Note that this function will NOT sort the contexts.
+        // Therefore, make sure to call the sorting function before
+        // this function
+        Context* allocate(uint64_t key, uint64_t pc) {
 
 		    auto c = this->get(key);
             if (c != nullptr) {
@@ -285,6 +214,7 @@ class LLBP : public TageSCL {
             return &set.front().second;
         }
 
+        // Sort the contexts in a set based on the replacement counter.
         void sortContexts(uint64_t key) {
             auto& set = this->getSet(key);
             set.sort(
@@ -293,48 +223,97 @@ class LLBP : public TageSCL {
                     return a.second.replace > b.second.replace;
                 });
         }
-    };
-
-    LLBPStorage llbpStorage;
-
-    Context* HitContext;
-
-    const int numContexts;
-    const int numPatterns;
+    } llbpStorage;
 
 
-    int lastSwitch = 0;
 
-    // The variables to define the context hash function
-    const int hashT, hashN, hashSk, hashSh;
+    bool bim_pred;
+    unsigned bimConf;
 
-    struct CTX_t {
-        uint64_t cur = 0;
-        uint64_t prev = 0;
-        uint64_t lastSwitch = 0;
-        uint64_t slackSamples = 0;
-        uint64_t totalSlack = 0;
-        uint64_t lastUseful = 0;
-        uint64_t prevUseful = 0;
-        uint64_t usefulSamples = 0;
-        uint64_t totalUseful = 0;
-    };
 
-    CTX_t contexts[80] = {0};
 
-    void updateContext(CTX_t &ctx, uint64_t cur);
+    /********************************************************************
+     * Rolling Context Register RCR
+     *
+     * The RCR maintains the previous executed branches to compute
+     * a context ID.
+     *
+     * The hash function is defined by 4 paramenters
+     *
+     * T: Type of history (T). Which branches should be hased
+     *     0: All branches, 1: Only calls, 2: Calls and returns
+     *     3: All unconditional branches, 4: All taken branches
+     *
+     * W: Number of branches that should be hashed (W in the paper).
+     * D: Number of most recent branches skipped for CCID. Adds delay which
+     *    is used to prefetch. (D in the paper.)
+     * S: Number of bits to shift the PC's. Is useful to avoid ping-pong context
+     *    due to the XOR function in case a loop is executed
+     *
+     * ********************************************************************* *
+     * EXAMPLE                                                               *
+     *                                                                       *
+     *                       pb-index (2.)  (3.)                             *
+     *                      v             v     v                            *
+     * history buffer : |l|k|j|i|h|g|f|e|d|c|b|a|                            *
+     *                            ^prefetch (2.)^                            *
+     *                                                                       *
+     * a is the newest branch PC added to the buffer, l the oldest.          *
+     * (2.) = W = 7; (3.) = D = 3                                            *
+     * branches used to obtain PB index hash: j to d                         *
+     * branches used to obtain hash to prefetch into PB: g to a              *
+     * ********************************************************************* *
+     */
+    class RCR {
+        const int maxwindow = 120;
 
-    Context* allocateNewContext(uint64_t pc, uint64_t key);
+        uint64_t calcHash(std::list<uint64_t> &vec, int n, int start=0, int shift=0);
 
-    // PCHistoryRegister* pcHistory;
+        // The context tag width
+        const int CTWidth;
 
-    Key lastHitCtx = 0;
-    int lastCtxSwitch = 0;
+        // A list of previouly taken branches
+        std::list<uint64_t> bb[10];
 
-    std::unordered_map<uint64_t,std::unordered_map<uint64_t,HistEntry>> allPatterns;
-    void evictPattern(uint64_t ctx_key, HistEntry* ptrn, bool ctx_evict=false);
+        // We compute the context ID and prefetch context ID
+        // only when the content of the RCR changes.
+        struct {
+            uint64_t ccid = 0;
+            uint64_t pcid = 0;
+        } ctxs;
 
-    // We do not use all tables (history lengths) in LLBP
+        int branchCount = 0;
+
+    public:
+        // The hash constants
+        const int T, W, D, S;
+
+        RCR(int _T, int _W, int _D, int _shift, int _CTWidth);
+
+        // Push a new branch into the RCR.
+        bool update(uint64_t pc, OpType type, bool taken);
+
+        // Get the current context ID
+        uint64_t getCCID();
+
+        // Get the prefetch context ID
+        uint64_t getPCID();
+    } rcr;
+
+
+    /********************************************************************
+     * Pattern Buffer
+     *
+     * The pattern buffer is a small set associative cache that maintains
+     * the most recent executed pattern set. Upcomming contexts
+     * are prefetched into the pattern buffer and predictions are made from
+     * the pattern buffer.
+     *
+     * Note that in the model we don't move the patterns into the pattern
+     * buffer. Instead we directly modify the patterns in the LLBPStorage.
+     * The pattern buffer models the caching behaviour and is only used
+     * in the timing model.
+     */
     struct PBEntry {
         Key key;
         bool dirty;
@@ -356,7 +335,7 @@ class LLBP : public TageSCL {
         {}
         PBEntry() : PBEntry(0) {}
     };
-    PBEntry* L2PredHit;
+
     class PatternBuffer : public BaseCache<uint64_t, PBEntry> {
       public:
         PatternBuffer(int n, int assoc)
@@ -377,31 +356,90 @@ class LLBP : public TageSCL {
             _index[entry.key] = set.begin();
             return &set.front().second;
         }
-    };
+    } patternBuffer;
 
-    PatternBuffer patternBuffer;
+
+    // Pointers to context, llbp pattern and PB entry in case of a
+    // LLBP pattern/context match.
+    Context* HitContext;
+    Pattern* llbpEntry;
+    PBEntry* pbEntry;
+
+
+    // A struct to maintain the prediction info from LLBP.
+    struct LLBPPredInfo {
+        bool hit = false;
+        int pVal = 0;
+        bool pred = false;
+        unsigned conf = 0;
+        int histLength = 0;
+        bool prefetched = false;
+        bool isProvider = false;
+        bool shorter = false;
+    } llbp;
+
+    // The prediction function for the LLBP.
+    void llbpPredict(uint64_t pc);
+
+    // The LLBP update function.
+    void llbpUpdate(uint64_t PC, bool resolveDir, bool predDir);
+
+    // The LLBP allocate function.
+    bool llbpAllocate(int idx, uint64_t pc, bool taken);
+
+    // Function to allocate a new context.
+    Context* allocateNewContext(uint64_t pc, uint64_t key);
+
+    // A map to filter the used history lengths.
+    std::unordered_map<int,int> fltTables;
+
+    // The number of contexts in the CD/LLBP
+    const int numContexts;
+    // The number of patterns per pattern set.
+    const int numPatterns;
+    // Bit width for pattern tag.
+    const int TTWidth;
+    // Bit width for context tag.
+    const int CTWidth;
+    // Constants for the patterns counter widths
+    const int CtrWidth;
+    const int ReplCtrWidth;
+    const int CtxReplCtrWidth;
+
+    // Folded history register. Same as in the TAGE predictor.
+    FoldedHistoryFast* fghrT1[MAXNHIST];
+    FoldedHistoryFast* fghrT2[MAXNHIST];
+
+
+    // Override the chooser functions to arbitrate between
+    // the baseline TAGE and LLBP
+    bool isNotUseful(bool taken) override;
+    bool isUseful(bool taken) override;
+    void updateL2Usefulness(bool taken);
+
+    unsigned chooseProvider() override;
+
+    inline bool llbpCorrect(bool taken);
+    inline bool primCorrect(bool taken);
+    inline bool tageCorrect(bool taken);
+    inline bool llbpUseful(bool taken);
+
+
+    // Timing simulation --------------------------------------
+    // Methods, variables and structures for the prefetching
+    // functionality. Prefetching is only modelled if `simulateTiming`
+    // is set to true.
+    const bool simulateTiming;
 
     void prefetch();
     void tickPrefetchQueue();
     void squashPrefetchQueue(bool btbMiss=false);
     void installInPB(PBEntry &entry, bool bypass=false);
+
+    // The prefetch queue
     std::list<PBEntry> prefetchQueue;
-
-
-    const bool simulateTiming;
     bool warmup = false;
     const int accessDelay;
-
-    int lastMispredict = 0;
-
-    std::unordered_map<int,int> fltTables;
-
-
-
-    const int TTWidth;
-    const int CTWidth;
-    FoldedHistoryFast* fghrT1[MAXNHIST];
-    FoldedHistoryFast* fghrT2[MAXNHIST];
 
 
     // Some histograms
@@ -427,113 +465,20 @@ class LLBP : public TageSCL {
         int baseCorrect = 0;
         int baseWrong = 0;
 
-
-
-        // int override = 0;
-        // int goodOverride = 0;
-        // int badOverride = 0;
-        // int badOverrideLonger = 0;
-        // int badOverrideSame = 0;
-        // int l2Hit = 0;
-        // int overrideWhouldHaveCorrect = 0;
-        // int overrideWhouldHaveWrong = 0;
-        // int bim1WhouldHaveCorrect = 0;
-        // int bim1WhouldHaveWrong = 0;
-        // int bim2WhouldHaveCorrect = 0;
-        // int bim2WhouldHaveWrong = 0;
-        // int bimContMatch = 0;
-        // int overrideSame = 0;
-        // int overrideNoHit = 0;
-        // int clearAlloc = 0;
-        // int clearUbit = 0;
-        // int collision = 0;
-        // int baseMispred = 0;
-        // int tageMispred = 0;
-        // int s1Mispred = 0;
-        // int sclMispred = 0;
-
         int l2Prov = 0;
         int l2Correct = 0;
         int l2Wrong = 0;
         int l2CtxHit = 0;
         int l2PtrnHit = 0;
-        // int l2Alloc = 0;
-        // int l2exists = 0;
-        // int l1useful = 0;
-        // int l1useless = 0;
-        // int l1bimuseful = 0;
-        // int l1bimuseless = 0;
-        // int l2useful = 0;
-        // int l2useless = 0;
-        // int l1l2correct = 0;
-        // int l1l2hitOnSame = 0;
-        // int l2longer = 0;
-        // int l2uselessSignChange = 0;
-        // int l2uselessAltSame = 0;
-        // int l2uselessBimSame = 0;
-        // int l2notBecauseNotUseful = 0;
         int l2notBecauseShorter = 0;
-        // int l2usefulButNotPromoted = 0;
         int l2notBecauseNotPrefetched = 0;
-        // int noAllocBecauseL2CorrNoPromote = 0;
 
-        // int l2CorrectL1Wrong = 0;
-        // int l1NoHit = 0;
-        // int l1EvictDueToSignChange = 0;
-        // int l1EvictDueToAltSame = 0;
-        // int l1EvictDueToL2Same = 0;
-        // int l1EvictBeforeUseful = 0;
-        // int l1EvictUReset = 0;
-        // int UseEvictDueToSignChange = 0;
-        // int UseEvictDueToAltSame = 0;
-        // int UseEvictDueToL2Same = 0;
-        // int UseEvictBeforeUseful = 0;
-        // int UseEvictUReset = 0;
-        // int l1HitSameButWrong = 0;
-        // int l1HitSameCtrDiff = 0;
-        // int l1HitSameUseAlt = 0;
-        // int l1promote = 0;
-        // int l1promoteSuccess = 0;
-        // int l1promoteFail = 0;
-        // int l1promoteExits = 0;
-
-        // int ctxSwitches = 0;
-        // int ctxSame = 0;
-        // int ctxCached = 0;
-        // int ctxSwitchesUseful = 0;
-        // int ctxSwitches1Useful = 0;
-        // uint64_t numPatternsFetched = 0;
-        // uint64_t numUPatternsFetched = 0;
-        // uint64_t numPatternsFetchedUseful = 0;
-        // uint64_t numUPatternsFetchedUseful = 0;
-
-        // int belowInsert = 0;
-        // int aboveInsert = 0;
-
-        // int numRelearn = 0;
-        // int wrongInit = 0;
-        // int evictSignChangeB1 = 0;
-        // int evictAltSameB1 = 0;
-
-        // int l2ctxExists = 0;
-        // int l2ctxNoExists = 0;
-        // int patternBufferd = 0;
-        // int l2predInL2 = 0;
         int l2cacheDirtyEvict = 0;
         int l2cacheCleanEvict = 0;
-        // int l2cacheNewAlloc = 0;
-        // int l2cacheUsefulEvict = 0;
-        // int l2cacheUsed = 0;
-
-        // int l2evicts = 0;
-        // int l2evictsUseful = 0;
-        // int l2evictNumPatterns = 0;
-        // int l2evictFromCache = 0;
-        // int l2evictFromQueue = 0;
-
         int l2PFHitInQueue = 0;
         int l2PFHitInCache = 0;
         int l2PFHitInCI = 0;
+
         int pfDroppedLocked = 0;
         int pfDroppedMispredict = 0;
         int pfDroppedBTBMiss = 0;
@@ -548,11 +493,6 @@ class LLBP : public TageSCL {
         int ovrPosAlias = 0;
         int ovrNegAlias = 0;
 
-        // int fullCtxAlloc = 0;
-        // int partCtxAlloc = 0;
-        // int fullCtxUseful = 0;
-        // int partCtxUseful = 0;
-
     } l2stats;
 
 };
@@ -563,56 +503,49 @@ struct LLBPConfig {
 
 
 #define LLBP_CONSTRAINED
-#ifdef LLBP_CONSTRAINED
-  int numPatterns = 16;
-#else
-  int numPatterns = 1000000;
-#endif
-
 
 #ifdef LLBP_CONSTRAINED
-  int numContexts = 1024*14;
-#else
-  int numContexts = 1000000;
-#endif
+    // Size of pattern sets and CD
+    int numPatterns = 16;
+    int numContexts = 1024*14;
 
-
-#ifdef LLBP_CONSTRAINED
+    // Associativity of pattern sets and CD
     int ctxAssoc = 7;
     int ptrnAssoc = 4;
-#else
-    int ctxAssoc = numContexts;
-    int ptrnAssoc = numPatterns;
-#endif
 
-    int CtrWidth = 3;
-    int ReplCtrWidth = 16;
-    int CtxReplCtrWidth = 2;
-
-    int l2cacheSize = 64;
-
-#ifdef LLBP_CONSTRAINED
-    int l2cacheAssoc = 4;
-#else
-    int l2cacheAssoc = l2cacheSize;
-#endif
-
-#ifdef LLBP_CONSTRAINED
+    // Tag widths
     int TTWidth = 13;
     int CTWidth = 14;
+
+    // PB config
+    int pbSize = 64;
+    int pbAssoc = 4;
 #else
+    int numContexts = 1000000;
+    int numPatterns = 1000000;
+
+    int ctxAssoc = numContexts;
+    int ptrnAssoc = numPatterns;
+
     int TTWidth = 20;
     int CTWidth = 31;
+
+    int pbSize = 1;
+    int pbAssoc = pbSize;
 #endif
 
-    bool pcInCtx = false;
+
+    int CtrWidth = 3;
+    int ReplCtrWidth = 16; // unused
+    int CtxReplCtrWidth = 2;
+
     bool simulateTiming = false;
-    int accessDelay = 6;
+    int accessDelay = 5;
 
 
   void print() const {
-    printf("LLBP Config: NumPatterns=%i, NumContexts=%i, ctxAssoc=%i, ptrnAssoc=%i, CtrWidth=%i, ReplCtrWidth=%i, CtxReplCtrWidth=%i, l2cacheSize=%i, TTWidth=%i, CTWidth=%i, simMispFlush=%i, accessDelay=%i\n ",
-           numPatterns, numContexts, ctxAssoc, ptrnAssoc, CtrWidth, ReplCtrWidth, CtxReplCtrWidth, l2cacheSize, TTWidth, CTWidth, simulateTiming, accessDelay);
+    printf("LLBP Config: NumPatterns=%i, NumContexts=%i, ctxAssoc=%i, ptrnAssoc=%i, CtrWidth=%i, ReplCtrWidth=%i, CtxReplCtrWidth=%i, pbSize=%i, TTWidth=%i, CTWidth=%i, simMispFlush=%i, accessDelay=%i\n ",
+           numPatterns, numContexts, ctxAssoc, ptrnAssoc, CtrWidth, ReplCtrWidth, CtxReplCtrWidth, pbSize, TTWidth, CTWidth, simulateTiming, accessDelay);
   }
 };
 
@@ -656,11 +589,6 @@ class LLBPTageSCL64kTiming : public LLBP {
             })
     {}
 };
-
-
-
-
-
 
 
 };  // namespace LLBP

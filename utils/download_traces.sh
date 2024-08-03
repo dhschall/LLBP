@@ -34,20 +34,20 @@ set -x -e
 TRACES=""
 
 
-# TRACES="${TRACES} mwnginxfpm-wiki"
-# TRACES="${TRACES} dacapo-kafka"
-# TRACES="${TRACES} dacapo-tomcat"
-# TRACES="${TRACES} dacapo-spring"
-# TRACES="${TRACES} renaissance-finagle-chirper"
-# TRACES="${TRACES} renaissance-finagle-http"
+TRACES="${TRACES} mwnginxfpm-wiki"
+TRACES="${TRACES} dacapo-kafka"
+TRACES="${TRACES} dacapo-tomcat"
+TRACES="${TRACES} dacapo-spring"
+TRACES="${TRACES} renaissance-finagle-chirper"
+TRACES="${TRACES} renaissance-finagle-http"
 TRACES="${TRACES} benchbase-tpcc"
-# TRACES="${TRACES} benchbase-twitter"
-# TRACES="${TRACES} benchbase-wikipedia"
-# TRACES="${TRACES} nodeapp-nodeapp"
-# TRACES="${TRACES} charlie.1006518"
-# TRACES="${TRACES} delta.507252"
-# TRACES="${TRACES} merced.467915"
-# TRACES="${TRACES} whiskey.426708"
+TRACES="${TRACES} benchbase-twitter"
+TRACES="${TRACES} benchbase-wikipedia"
+TRACES="${TRACES} nodeapp-nodeapp"
+TRACES="${TRACES} charlie.1006518"
+TRACES="${TRACES} delta.507252"
+TRACES="${TRACES} merced.467915"
+TRACES="${TRACES} whiskey.426708"
 
 
 
@@ -56,6 +56,6 @@ TRACE_DIR="./traces"
 
 for fn in $TRACES; do
 
-    wget -O $TRACE_DIR/$fn.champsim.trace.gz https://zenodo.org/records/13133243/files/$fn.champsim.trace.gz?download=1&preview=1
+    wget -O $TRACE_DIR/$fn.champsim.trace.gz https://zenodo.org/records/13133243/files/$fn.champsim.trace.gz?download=1
 
 done

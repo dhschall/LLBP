@@ -1,6 +1,6 @@
 # This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
 # See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
-name: CMake on multiple platforms
+name: Build and Test
 
 on:
   push:
@@ -74,9 +74,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        bpmodels: [
-          llbp, llbp-timing
-        ]
+        models:
+          - bp: llbp
+          - bp: llbp-timing
+            flags: --simulate-btb
 
     steps:
     - uses: actions/checkout@v4
@@ -100,8 +101,8 @@ jobs:
 
     - name: Run test
       run: |
-        ./build/predictor --simulate-btb -w 1000000 -n 2000000 \
-            --model ${{ matrix.bpmodels }} \
+        ./build/predictor -w 1000000 -n 2000000 \
+            --model ${{ matrix.models.bp }} ${{ matrix.models.flags }} \
             traces/nodeapp-nodeapp-small.champsim.trace.gz
 
 

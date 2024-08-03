@@ -16,7 +16,7 @@ inline void ctrupdate(int8_t& ctr, bool taken, int nbits) {
 template<typename T>
 inline void ctrupdate(T& ctr, bool up, int nbits) {
     if (up) {
-        if (ctr < ((1 << nbits) - 1)) ctr++;
+        if (ctr < ((1 << (T)nbits) - 1)) ctr++;
     } else {
         if (ctr > 0) ctr--;
     }

@@ -23,9 +23,9 @@
 # SOFTWARE.
 
 # Execute this script using
-#   ./eval_all.sh
+#   ./eval_benchmarks.sh <bp model>
 
-set -e
+set -x -e
 
 
 
@@ -52,67 +52,51 @@ TRACES="${TRACES} whiskey.426708"
 
 
 
-TRACE_DIR="./traces"
+TRACE_DIR="./tracess"
+OUT=results/
+
+POSTFIX="compare-to-bpu-anaysis-12"
+
+
+model="llbp"
+
+# use script arguments to set the model
+if [ $# -eq 1 ]; then
+    model=$1
+fi
 
 
 cmake --build ./build --target predictor -j $(nproc)
 
-
-OUT=results/
-POSTFIX="ae-AlwaysUD"
-POSTFIX="ae-CorrectedNT"
-POSTFIX="ae-New2-noBucket-D5clk"
-
-
-
 d1M=1000000
+d1k=1000
 
 
 N_WARM=$(( 100 * $d1M ))
-N_SIM=$(( 500 * $d1M ))
-
-
+N_SIM=$(( 100 * $d1M ))
 
 FLAGS=""
-# FLAGS="${FLAGS} --tabledump"
 FLAGS="${FLAGS} --simulate-btb"
 
 
-BRMODELS=""
-BRMODELS="${BRMODELS} llbp"
-BRMODELS="${BRMODELS} llbp-timing"
-BRMODELS="${BRMODELS} tage64kscl"
-BRMODELS="${BRMODELS} tage512kscl"
+for fn in $TRACES; do
 
 
-commands=()
+    TRACE=$TRACE_DIR/$fn.champsim.trace.gz
 
-for model in $BRMODELS; do
-
-    for fn in $TRACES; do
-
-        TRACE=$TRACE_DIR/$fn.champsim.trace.gz
-
-        ## Create output directory
-        OUTDIR="${OUT}/${fn}/"
-        mkdir -p $OUTDIR
+    ## Create output directory
+    OUTDIR="${OUT}/${fn}/"
+    mkdir -p $OUTDIR
 
 
+    ./build/predictor $TRACE \
+            --model ${model} \
+            ${FLAGS} \
+            -w ${N_WARM} -n ${N_SIM} \
+            --output "${OUTDIR}/${model}-${POSTFIX}" \
+            > $OUTDIR/${model}-${POSTFIX}.txt 2>&1 &
 
-        CMD="\
-            ./build/predictor $TRACE \
-                --model ${model} \
-                ${FLAGS} \
-                -w ${N_WARM} -n ${N_SIM} \
-                --output "${OUTDIR}/${model}-${POSTFIX}" \
-                > $OUTDIR/${model}-${POSTFIX}.txt 2>&1" &
-
-        commands+=("$CMD")
-
-    done
 
 done
 
-echo "Running ${#commands[@]} simulations"
 
-# parallel --jobs $(nproc) ::: "${commands[@]}"
