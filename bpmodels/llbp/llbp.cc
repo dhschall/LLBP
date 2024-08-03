@@ -137,9 +137,6 @@ LLBP::LLBP(LLBPConfig cfg)
 
     int n = 0;
     for (auto i : l) {
-        printf("%i=>%i:%i:%i ", i, n, n % cfg.ptrnAssoc, mllbp[i]);
-        fltTables[i]=n++;
-
         // To reduce the complexity of the multiplexer LLBP groups
         // always four consecutive history lenght in one bucket.
         // As the pattern sets are implemented a set associative
@@ -150,10 +147,10 @@ LLBP::LLBP(LLBPConfig cfg)
         // ensures that history length 6,10,13,14 gets assign
         // 0,4,8,12 with the lowest two bits 0b00. Thus the set will
         // be the same.
-        // auto bucket = n / cfg.ptrnAssoc;
-        // fltTables[i] = ((n%cfg.ptrnAssoc) << ceilLog2(cfg.ptrnAssoc) ) | bucket;
-        // printf("%i=>%i:%i:%i:%i ", i, n, bucket, fltTables[i], mllbp[i]);
-        // n++;
+        auto bucket = n / cfg.ptrnAssoc;
+        fltTables[i] = ((n%cfg.ptrnAssoc) << ceilLog2(cfg.ptrnAssoc) ) | bucket;
+        printf("%i=>%i:%i:%i:%i ", i, n, bucket, fltTables[i], mllbp[i]);
+        n++;
     }
 
 

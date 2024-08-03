@@ -5,9 +5,9 @@
         <img alt="GitHub" src="https://img.shields.io/badge/License-MIT-yellow.svg">
     </a>
     <a href="https://github.com/dhschall/LLBP/releases">
-        <img alt="GitHub release" src="https://img.shields.io/github/release/dhschall/LLBP">
+        <img alt="GitHub release" src="https://img.shields.io/github/v/release/dhschall/LLBP">
     </a>
-    <!-- <a href="https://doi.org/10.5281/zenodo.5520125"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.5520125.svg" alt="Trace DOI"></a> -->
+    <a href="https://doi.org/10.5281/zenodo.13197409"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.13197409.svg" alt="Trace DOI"></a>
     <a href="https://github.com/dhschall/LLBP/actions/workflows/build-and-run.yml">
         <img alt="Build and test" src="https://github.com/dhschall/LLBP/actions/workflows/build-and-run.yml/badge.svg">
     </a>
@@ -85,14 +85,20 @@ For convenience, the simulator contains a script to run the experiments on all e
 The results in form of a stats file are stored in the `results` directory. Note, the simulator will print out some intermediate results after every 5M instructions which is useful to monitor the progress of the simulation.
 
 
-## Reproducing main results (Figure 9)
+## Plot results
 
-To reproduce the main results of the paper - the reduction of mispredictions (Figure 9) we provide a separate script (`./eval_all.sh`) that runs the experiments for all evaluated branch predictor models and benchmarks. The script can be run as follows:
+The Jupyter notebook (`./analysis/mpki.ipynb`) can be used to parse the statistics file and plot the branch MPKI for different branch predictor models.
+
+To reproduce a similar graph as in the paper (Figure 9), we provide a separate script (`./eval_all.sh`) that runs the experiments for all evaluated branch predictor models and benchmarks.
+
+> *Note:* As we integrated the LLBP with ChampSim for the paper, the results might slightly differ from the presented numbers in the paper.
+
+The script can be run as follows:
 
 ```bash
 ./eval_all.sh
 ```
-The Jupyter notebook (`./analysis/mpki.ipynb`) can be used to parse the statistics file and generate the graph. Open the file and hit `Run All` to generate the graph.
+Once the runs complete open they Jupyter notebook and hit run all cells.
 
 
 
