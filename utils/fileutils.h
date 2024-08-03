@@ -155,8 +155,6 @@ class ChampSimTrace : public TraceReaderCSVGz
 
 
     FILE *trace_file;
-    char trace_string[1024];
-    // char gunzip_command[1024];
     std::string gunzip_command;
     input_instr cur_instr, next_instr;
 

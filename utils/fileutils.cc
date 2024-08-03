@@ -224,33 +224,31 @@ bool ChampSimTrace::open(std::string filename)
 
     trace_file = popen(gunzip_command.c_str(), "r");
     if (trace_file == NULL) {
-        printf("\n*** Trace file not found: %s ***\n\n", filename);
+        std::cout << "\n*** Trace file not found: " << filename << " ***\n\n";
         return false;
     }
     if (!fread(&next_instr, sizeof(input_instr), 1, trace_file)) {
-        printf("\n*** Cannot read from file: %s ***\n\n", filename);
+        std::cout << "\n*** Cannot read from file: " << filename << " ***\n\n";
         return false;
     }
     return true;
-
 }
 
 bool ChampSimTrace::reopen(std::string gzfilename)
 {
-
     // reached end of file for this trace
-    printf("*** Reached end of trace. Repeating trace: %s", gzfilename.c_str());
+    std::cout << "*** Reached end of trace. Repeating trace: " << gzfilename << std::endl;
 
     // close the trace file and re-open it
     pclose(trace_file);
 
     trace_file = popen(gunzip_command.c_str(), "r");
     if (trace_file == NULL) {
-        printf("\n*** CANNOT REOPEN TRACE FILE ***\n\n");
+        std::cout << "\n*** CANNOT REOPEN TRACE FILE ***\n\n";
         return false;
     }
     if (!fread(&next_instr, sizeof(input_instr), 1, trace_file)) {
-        printf("\n*** Cannot read after reopen trace ***\n\n");
+        std::cout << "\n*** Cannot read after reopen trace ***\n\n";
         return false;
     }
     return true;

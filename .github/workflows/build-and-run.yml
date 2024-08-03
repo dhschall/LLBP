@@ -35,6 +35,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: build
+        key: ${{ matrix.os }}-${{ matrix.c_compiler }}-build
+
     - name: Install Dependencies
       run: |
           sudo apt-get -y update
@@ -52,13 +58,53 @@ jobs:
 
     - name: Build
       # Build your program with the given configuration
-      run: cmake --build ${{github.workspace}}/build
+      run: cmake --build ${{github.workspace}}/build -j $(nproc)
 
-    # - name: Test
-    #   working-directory: ${{ steps.strings.outputs.build-output-dir }}
-    #   # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-    #   # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-    #   run: ctest --build-config ${{ matrix.build_type }}
+
+
+
+    # ------------------------------------------------------------
+    # Test Section
+    # ------------------------------------------------------------
+  test:
+    runs-on: ${{ matrix.os }}
+    needs: build
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        bpmodels: [
+          llbp, llbp-timing
+        ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Restore CMake build
+      uses: actions/cache/restore@v4
+      with:
+        path: build
+        key: ${{ matrix.os }}-gcc-build
+
+    - name: Install Dependencies
+      run: |
+          sudo apt-get -y install libboost-dev libboost-program-options-dev
+
+
+    - name: Download test trace
+      run: |
+        wget  \
+          -O traces/nodeapp-nodeapp-small.champsim.trace.gz \
+          https://zenodo.org/records/13133243/files/nodeapp-nodeapp-small.champsim.trace.gz?download=1
+
+    - name: Run test
+      run: |
+        ./build/predictor --simulate-btb -w 1000000 -n 2000000 \
+            --model ${{ matrix.bpmodels }} \
+            traces/nodeapp-nodeapp-small.champsim.trace.gz
+
+
 
 
 
