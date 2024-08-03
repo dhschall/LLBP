@@ -23,6 +23,8 @@
  */
 
 #include "llbp.h"
+
+#include <assert.h>
 #include "utils/intmath.hh"
 
 
@@ -35,200 +37,87 @@ namespace LLBP {
 #define COND2 (false)
 
 
-
-
-#define HASH(...) HASHFN_(__VA_ARGS__)
-#define HASHFN_(a1, a2, a3, a4) hashT(a1), hashN(a2), hashSk(a3), hashSh(a4)
-
-#define TEST_ARGS 10, 1
-
-#define CTX_RDIP
-
-// #define INF_HIST
-// #define MOVE_ON_ALLOC
-// #define MOVE_USEFUL_ONLY
-// #define MOVE_ON_USEFUL
-// #define MOVE_ON_CORRECT
-// #define MOVE_ON_EVICT
-// #define MOVE_ON_USELESS
-
 #ifdef LLBP_CONSTRAINED
-
+// Only sort if the constrained version is used
 #define L2_SORT_CTX
 #define L2_SORT_PTRN
-
-#define L2_SORT_CTX_NCONF
-// #define L2_SORT_CTX_CORR
-
-#endif
-
-
-// #define L2_LRU
-// #define PRINT_DISTANCE
-
-#ifdef LLBP_CONSTRAINED
-// #define LLBP_CONSTRAINED
-// #define NO_ODD_TABLES
 #define FILTER_TABLES
-// #define NO_EVICT_LONGER
-#else
-// #define FILTER_TABLES
 
 #endif
-
-// #define CTX_BITS 14
-// #define CTX_MASK uint64_t((1 << CTX_BITS) - 1)
-
-// #define PRELOAD
-
-// #define FILTER_TOPN_BRANCHES
-// #define FILTER_H2P_FILTER
-// #define USE_ORACLE
-
-#define USE_NEW_REPLACE
-// #define ALLOC_BOTH
-// #define ALLOC_ONLY_L2
-// #define USE_L2_FOR_TRAINING
-
-
-#define L2_TABLE_START 0
-#define L2_TABLE_END 40
-
-// #define L2_TABLE_START 15
-// #define L2_TABLE_END 30
-
-
-
-// //================
-// // As Victim cache
-// #define USE_L2_AS_VICTIM
-// #define MOVE_ON_EVICT
-
-// #define DONT_MOVE_URESET
-// #define DONT_MOVE_ALT_SAME
-// #define DONT_MOVE_SIGN_CHANGE
-// #define DONT_MOVE_BEFORE_USEFUL
-#define DONT_MOVE_L2_USEFUL  //L1nRU
-// #define REMOVE_USELESS_L2
-// #define REMOVE_L2_IF_L1_SAME
-
 
 #define OVERWRITE_SCL
-// #define OVERWRITE_ALLWAYS
 
-
-
-//================
-// Alloc both
-#define ALLOC_BOTH
-#define ALLOC_SIMULTANEOUS
-#define MOVE_ON_ALLOC
-
-// //================
-// // Use L2 for training
-// #define USE_L2_FOR_TRAINING
-// #define MOVE_ON_ALLOC
-
-// //===============
-// // Use only L2
-// #define USE_ONLY_L2
-// #define ALLOC_BOTH
-// #define MOVE_ON_ALLOC
-
-
-///================
-// #define DONT_PREDICT_L2
-
-
-/* Define the context hash function
- * 1. Type of history. Which branches should be hased
+/* The hash function is defined by 4 paramenters
+ *
+ * T: Type of history (T). Which branches should be hased
  *     0: All branches, 1: Only calls, 2: Calls and returns
  *     3: All unconditional branches, 4: All taken branches
  *
- * 2. Number of branches that should be hashed (W in the paper). Also, n
- *    or hashN in this code.
- * 3. Number of most recent branches skipped for CCID. Adds delay which
- *    is used to prefetch. Also, referred to as skip or HashSk in this code.
- * 4. Number of bits to shift the PC's. Is useful to avoid ping-pong context
+ * W: Number of branches that should be hashed (W in the paper).
+ * D: Number of most recent branches skipped for CCID. Adds delay which
+ *    is used to prefetch. (D in the paper.)
+ * S: Number of bits to shift the PC's. Is useful to avoid ping-pong context
  *    due to the XOR function in case a loop is executed
  *
- * =========================================================================
- * EXAMPLE                                                                 *
- *                                                                         *
- *                       pb-index (2.)  (3.)                               *
- *                      v             v     v                              *
- * history buffer : |l|k|j|i|h|g|f|e|d|c|b|a|                              *
- *                            ^prefetch (2.)^                              *
- *                                                                         *
- * a is the newest branch PC added to the buffer, l the oldest.            *
- * (2.) = n = W = 7; (3.) = 3                                              *
- * branches used to obtain PB index hash: j to d                           *
- * branches used to obtain hash to prefetch into PB: g to a                *
- * =========================================================================
-*/
+ * ********************************************************************* *
+ * EXAMPLE                                                               *
+ *                                                                       *
+ *                       pb-index (2.)  (3.)                             *
+ *                      v             v     v                            *
+ * history buffer : |l|k|j|i|h|g|f|e|d|c|b|a|                            *
+ *                            ^prefetch (2.)^                            *
+ *                                                                       *
+ * a is the newest branch PC added to the buffer, l the oldest.          *
+ * (2.) = W = 7; (3.) = D = 3                                            *
+ * branches used to obtain PB index hash: j to d                         *
+ * branches used to obtain hash to prefetch into PB: g to a              *
+ * ********************************************************************* *
+ */
 
-// LLBP default
+// LLBP default hash values
+// [T, W, D, S]
 #define HASHVALS 3, 8, 8, 2
-
-
-///================
 
 
 
 LLBP::LLBP(LLBPConfig cfg)
     : TageSCL(cfg.tsclConfig),
+    llbpStorage(cfg.numContexts, cfg.numPatterns,
+                 cfg.ctxAssoc, cfg.ptrnAssoc),
+    rcr(HASHVALS,14),
+    patternBuffer(cfg.pbSize, cfg.pbAssoc),
+
+    numContexts(cfg.numContexts),
+    numPatterns(cfg.numPatterns),
+    TTWidth(cfg.TTWidth),
+    CTWidth(cfg.CTWidth),
     CtrWidth(cfg.CtrWidth),
     ReplCtrWidth(cfg.ReplCtrWidth),
     CtxReplCtrWidth(cfg.CtxReplCtrWidth),
 
-    llbpStorage(cfg.numContexts, cfg.numPatterns,
-                 cfg.ctxAssoc, cfg.ptrnAssoc),
-    numContexts(cfg.numContexts),
-    numPatterns(cfg.numPatterns),
-    // insertPossition(cfg.insertDistance),
-    HASH(HASHVALS),
-    // localCtxCacheSize(cfg.l2cacheSize),
-    patternBuffer(cfg.l2cacheSize, cfg.l2cacheAssoc),
-    // localCtxCache(cfg.l2cacheSize),
-    TTWidth(cfg.TTWidth),
-    CTWidth(cfg.CTWidth),
     simulateTiming(cfg.simulateTiming),
     warmup(false),
     accessDelay(cfg.accessDelay),
-
-    // h2pFilter(512, 4),
-
     primMispLength(0,36,36),
     llbpMispLength(0,36,36),
     primProvLength(0,36,36),
     llbpProvLength(0,36,36),
-    numHistPerContext(1,41,20),
-    numUsefulHistPerContext(1,41,20)
+    numHistPerContext(1,17,16),
+    numUsefulHistPerContext(1,17,16)
 {
+    printf("LLBP branch predictor configs -------\n");
     cfg.print();
-    printf("LLBP:: CTX Hash:[%i,%i,%i,%i]\n",
-            hashT, hashN, hashSk, hashSh);
 
     printf("CD: ");
     llbpStorage.printCfg();
     printf("PS: ");
-    llbpStorage.insert(0,0)->patterns.printCfg();
+    llbpStorage.allocate(0,0)->patterns.printCfg();
     llbpStorage.erase(0);
     printf("PB: ");
     patternBuffer.printCfg();
 
-    assert((!simulateTiming || (cfg.l2cacheSize >= hashSk))
+    assert((!simulateTiming || (cfg.pbSize >= rcr.D))
             || "Pattern buffer hold at least all prefetches.");
-
-    // Prefill the preload queue. Number of entries is equal to the
-    // preload distance plus one.
-    assert(hashSk >= 0);
-    bbv[0].resize(window);
-    bbv[1].resize(window);
-
-
-
-    init_predictor();
 
     int mllbp[MAXNHIST];
     for (int i = 1; i <= nhist; i++) {
@@ -241,8 +130,9 @@ LLBP::LLBP(LLBPConfig cfg)
 
 #ifdef FILTER_TABLES
     // LLBP does not provide for all different history lenghts in
-    // TAGE a prediction only for the following once. Note this
-    // are not the actual length but the table index in TAGE
+    // TAGE a prediction only for the following once which where
+    // empirically determined. Note this
+    // are not the actual length but the table indices in TAGE.
     auto l = {6,10,13,14,15,16,17,18,  19,20,22,24,26,28,32,36};
 
     int n = 0;
@@ -250,9 +140,19 @@ LLBP::LLBP(LLBPConfig cfg)
         printf("%i=>%i:%i:%i ", i, n, n % cfg.ptrnAssoc, mllbp[i]);
         fltTables[i]=n++;
 
+        // To reduce the complexity of the multiplexer LLBP groups
+        // always four consecutive history lenght in one bucket.
+        // As the pattern sets are implemented a set associative
+        // structure the lower bits determine the set=bucket.
+        // The `fltTable`-map not only filters the history lengths
+        // but also maps each length the correct pattern set index.
+        // E.e. for the four way associativity the following function
+        // ensures that history length 6,10,13,14 gets assign
+        // 0,4,8,12 with the lowest two bits 0b00. Thus the set will
+        // be the same.
         // auto bucket = n / cfg.ptrnAssoc;
-        // printf("%i=>%i:%i:%i ", i, n, bucket, mllbp[i]);
-        // fltTables[i] = ( n << ceilLog2(cfg.ptrnAssoc) ) | bucket;
+        // fltTables[i] = ((n%cfg.ptrnAssoc) << ceilLog2(cfg.ptrnAssoc) ) | bucket;
+        // printf("%i=>%i:%i:%i:%i ", i, n, bucket, fltTables[i], mllbp[i]);
         // n++;
     }
 
@@ -260,10 +160,6 @@ LLBP::LLBP(LLBPConfig cfg)
     printf("\n");
 
 #endif //FILTER_TABLES
-
-
-
-
 }
 
 LLBP::~LLBP() {
@@ -277,71 +173,12 @@ LLBP::~LLBP() {
 
 
 
-void LLBP::init_predictor() {
-    printf("LLBP branch predictor\n");
-
-}
-
-
-uint64_t LLBP::calcHash(vector<uint64_t> &vec, int n) {
-    uint64_t hash = 0;
-    for (int i = 0; (i < n) && (i < vec.size()); i++) {
-        hash ^= vec[vec.size() - i - 1];
-    }
-    return hash & ((1 << CTWidth) - 1);
-}
-
-/*
- * Given the {n} number of branches staring from vec[end-start]
- * to vec[end-start-n-1] we create the hash function by shifting
- * each PC by {shift} number if bits i.e.
- *
- *   000000000000|  PC  |    :vec[end-start]
- * ^ 0000000000|  PC  |00    :vec[end-start-1]
- * ^ 00000000|  PC  |0000    :vec[end-start-2]
- *           .                     .
- *           .                     .
- *           .                     .
- * ^ |  PC  |000000000000    :vec[end-start-n-1]
- * ----------------------
- *       final hash value
- * */
-uint64_t LLBP::calcHash(std::list<uint64_t> &vec, int n, int start, int shift) {
-    uint64_t hash = 0;
-    if (vec.size() < (start + n)) {
-        return 0;
-    }
-    uint64_t sh = 0;
-    auto it = vec.begin();
-    std::advance(it, start);
-    for (; (it != vec.end()) && (n > 0); it++, n--) {
-        uint64_t val = *it;
-
-        // Shift the value
-        hash ^= val << uint64_t(sh);
-
-        sh += shift;
-        if (sh >= CTWidth) {
-            sh -= uint64_t(CTWidth);
-        }
-    }
-    return hash & ((1 << CTWidth) - 1);
-}
-
-uint64_t LLBP::getCurContext(uint64_t pc) {
-    return contexts[1].cur & ((1 << CTWidth) - 1);
-}
-
-
-
-
 /////////////////////////////////////////////////////////////////////////////////
 // Main TAGE and chooser overwrites
 /////////////////////////////////////////////////////////////////////////////////
 
 
 bool LLBP::predict(uint64_t pc) {
-
 
     // 1. The base prediction
     TageSCL::basePredict(pc);
@@ -350,27 +187,22 @@ bool LLBP::predict(uint64_t pc) {
     bimConf = baseConf;
 
     // 2. Make the LLBP prediction
-    L2Predict(pc);
+    llbpPredict(pc);
 
     // If there was a hit in level 2 mark it.
     // Also override the base prediction. The TAGE arbiter
     // will decide which prediction to use.
     // Note the TAGE chooser will use altConf in its index
-
-#ifdef DONT_PREDICT_L2
-    l2.isProvider = false;
-#else
-    baseConf = l2.hit ? l2.conf : bimConf;
-    base_pred = l2.hit ? l2.pred : bim_pred;
-    l2.isProvider = l2.hit;
-#endif
+    baseConf = llbp.hit ? llbp.conf : bimConf;
+    base_pred = llbp.hit ? llbp.pred : bim_pred;
+    llbp.isProvider = llbp.hit;
 
     // 3. The TAGE prediction
-    // Tage will call the chooseProvider function
+    // Tage will call the `chooseProvider` function
     // Which arbitrates between the TAGE and L2 predictions.
     tagePredict(pc);
 
-    DPRINTF("Prov: [TAGE:%i, L2:%i]\n", tage_pred, l2.isProvider);
+    DPRINTF("Prov: [TAGE:%i, L2:%i]\n", tage_pred, llbp.isProvider);
 
     tage_scl_pred = tage_pred;
     scl_provider = tage_provider;
@@ -382,9 +214,9 @@ bool LLBP::predict(uint64_t pc) {
     provider = scl_provider;
 
 #ifdef OVERWRITE_SCL
-    if (l2.isProvider) {
+    if (llbp.isProvider) {
         provider = BASE;
-        return l2.pred;
+        return llbp.pred;
     }
 #endif
 
@@ -394,35 +226,29 @@ bool LLBP::predict(uint64_t pc) {
 
 unsigned LLBP::chooseProvider() {
 
-    bool chooseL2 = l2.hit;
+    bool chooseL2 = llbp.hit;
 
-#ifdef DONT_PREDICT_L2
-    chooseL2 = false;
-#endif
-
-#ifndef OVERWRITE_ALLWAYS
     // If LLBP hits we don't use LLBP if it has a longer history
-    if (chooseL2 && (l2.histLength < HitBank)) {
+    if (chooseL2 && (llbp.histLength < HitBank)) {
         chooseL2 = false;
-        l2.shorter = true;
-    }
-#endif
-
-    if (simulateTiming && !warmup && !l2.prefetched) {
-        chooseL2 = false;
+        llbp.shorter = true;
     }
 
+    // Don't override if the prefetch is to late.
+    if (simulateTiming && !warmup && !llbp.prefetched) {
+        chooseL2 = false;
+    }
 
     if (chooseL2) {
         AltBank = 0;
-        altConf = baseConf = l2.conf;
-        alttaken = base_pred = l2.pred;
-        l2.isProvider = true;
+        altConf = baseConf = llbp.conf;
+        alttaken = base_pred = llbp.pred;
+        llbp.isProvider = true;
         return BASE;
     }
 
     // Clear the provider bit if instead the main TAGE is used.
-    l2.isProvider = false;
+    llbp.isProvider = false;
 
 
     // If the longest is somehow certain use its prediction.
@@ -437,186 +263,83 @@ unsigned LLBP::chooseProvider() {
     return (AltBank > 0) ? ALT : BASE;
 }
 
-
-
-
-
-// bool LLBP::isNotUseful(bool taken) {
-// #if !defined(USE_NEW_REPLACE) || defined(DONT_PREDICT_L2)
-//     return Base::isNotUseful(taken);
-// #endif
-
-//     // If there was no hit in level 2 use the default algorithm.
-//     if (!l2.hit) {
-//         return TageSCL::isNotUseful(taken);
-//     }
-//     return false;
-
-//     // If both the longest and alternate predictions where correct
-//     // we can possible free the longest entry to use it for other
-//     // predictions.
-//     if ((alttaken == taken) && (LongestMatchPred == taken)) {
-//         // We only clear if the alternate prediction has a
-//         // high confidence.
-//         if (altConf == HighConf) {
-//             if (AltBank > 0) {
-//                 return true;
-//             }
-//         }
-//     }
-
-//     // We also clear if this is because the base predictor has
-//     // overwritten the prediction and it was correct to do so.
-//     // There is no need to handle this prediction in the main TAGE.
-//     // if (!l2.override) {
-//         // if ((l2.pred == taken) && (LongestMatchPred == taken)) {
-//         //     l2stats.clearUbit++;
-//         //     return true;
-//         // }
-//     // }
-
-//     return false;
-// }
-
-// bool LLBP::isUseful(bool taken) {
-// #if !defined(USE_NEW_REPLACE) || defined(DONT_PREDICT_L2)
-//     return Base::isUseful(taken);
-// #endif
-//     if (!l2.hit) {
-//         return TageSCL::isUseful(taken);
-//     }
-//     return false;
-// }
-
-
 bool LLBP::isNotUseful(bool taken) {
 
-#if !defined(DONT_PREDICT_L2)
-    if (l2.hit) {
+    if (llbp.hit) {
         return false;
     }
-#endif
     // If there was no hit in level 2 use the default algorithm.
     return TageSCL::isNotUseful(taken);
 }
 
 bool LLBP::isUseful(bool taken) {
 
-#if !defined(DONT_PREDICT_L2)
-    if (l2.hit) {
+    if (llbp.hit) {
         return false;
     }
-#endif
     // If there was no hit in level 2 use the default algorithm.
     return TageSCL::isUseful(taken);
 }
 
+bool LLBP::llbpCorrect(bool taken) {
+    return llbp.isProvider && (taken == llbp.pred);
+}
+
+bool LLBP::primCorrect(bool taken) {
+    return (scl_provider == STC) ? (sc_pred == taken) :
+                    HitBank ? (LongestMatchPred == taken) :
+                    AltBank ? (alttaken == taken) : (bim_pred == taken);
+}
+
+bool LLBP::tageCorrect(bool taken) {
+    return  HitBank ? (LongestMatchPred == taken) :
+            AltBank ? (alttaken == taken) : (bim_pred == taken);
+}
+
+bool LLBP::llbpUseful(bool taken) {
+    return llbpCorrect(taken) && !primCorrect(taken);
+}
 
 void LLBP::updateL2Usefulness(bool taken) {
 
-    if (!l2.hit) return;
+    if (!llbp.hit) return;
 
-    bool l1_correct = HitBank
-                    ? (LongestMatchPred == taken)
-                    : (bim_pred == taken);
-    bool l2_correct = (l2.pred == taken);
-
-    // In case both predictions are the same we can clear the u-bit
-    // of the longer, more precise history.
-    if (l1_correct && l2_correct) {
-
-        // If both hit on the same table.
-        if (l2.histLength == HitBank) {
-
-#ifdef REMOVE_L2_IF_L1_SAME
-
-            if (HitEntry->u < (1 << uwidth) - 1)
-                HitEntry->u++;
-            HitEntry->uselessReason = -1;
-            l2stats.l1useful++;
-
-
-            ctrupdate(L2HitEntry->replace, false, ReplCtrWidth);
-
-            // if (L2HitEntry->replace == 0)
-            {
-                evictPattern(HitContext->key, L2HitEntry);
-                HitContext->patterns.erase(L2HitEntry->key);
-            }
-#endif
-
-        } else if (l2.histLength > HitBank) {
-
-#ifdef REMOVE_USELESS_L2
-               HitContext->patterns.erase(L2HitEntry->key);
-#endif
-        } else {
-            // if (l2.conf == HighConf) {
-                if (HitBank) {
-#ifndef DONT_PREDICT_L2
-#ifndef DONT_MOVE_L2_USEFUL
-                    if (HitEntry->u > 0)
-                        HitEntry->u--;
-                    HitEntry->uselessReason = 4;
-#endif
-#endif
-                }
-            // }
-
-#ifdef REMOVE_L2_IF_L1_SAME
-
-            evictPattern(HitContext->key, L2HitEntry);
-            HitContext->patterns.erase(L2HitEntry->key);
-#endif
-
-        }
-
-    }
-#ifdef DONT_PREDICT_L2
-    bool provL2 = l2.hit;
-#else
-    bool provL2 = l2.isProvider;
-#endif
+    auto llbp_correct = llbpCorrect(taken);
+    bool prim_correct = tageCorrect(taken);
 
     // If Level 1 was provider, it was correct and
     // level 2 was incorrect this prediction was useful.
-    if (!provL2 && l1_correct && !l2_correct) {
+    if (!llbp.isProvider && prim_correct && !llbp_correct) {
         if (HitBank) {
-#ifndef DONT_PREDICT_L2
             if (HitEntry->u < (1 << uwidth) - 1)
                 HitEntry->u++;
-#endif
         }
     }
 
 
     // Same for level 2. If it was the provider and was correct
     // but level 1 not, it was useful.
-    if (l2.hit && !l2.shorter && l2_correct && !l1_correct) {
-
-        ctrupdate(L2HitEntry->replace, true, ReplCtrWidth);
-
+    if (llbp.hit && !llbp.shorter && llbp_correct && !prim_correct) {
+        ctrupdate(llbpEntry->replace, true, ReplCtrWidth);
     }
-
 }
 
 
 void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
 
 
-    DPRINTIF(COND,"%s nM:%i, TAGE:[d:%i, conf:%i, prov:%d HitBank:%d], BASE:[d:%i, conf:%i, %i]\n",
+    DPRINTIF(COND,"%s nM:%i, TAGE:[d:%i, conf:%i, prov:%d HitBank:%d], BASE:[d:%i, conf:%i]\n",
             (resolveDir != tage_pred) ? "Misp" : "Corr",
             stats.tageMispred,
-            tage_pred, tageConf, tage_provider, HitBank, base_pred, baseConf, HitIdx);
+            tage_pred, tageConf, tage_provider, HitBank, base_pred, baseConf);
 
 
     // 1. Table allocation --------------------
-
     bool ALLOC = false;
-    if (l2.isProvider) {
+    if (llbp.isProvider) {
         // If LLBP was provider we allocate if the prediction was wrong
         // and the history length is shorter than the maximum.
-        ALLOC = (tage_pred != resolveDir) & (l2.histLength < nhist);
+        ALLOC = (tage_pred != resolveDir) & (llbp.histLength < nhist);
 
     } else {
 
@@ -626,7 +349,7 @@ void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
 
         // If LLBP was actually correct, it was longer than TAGE
         // but it was not choosen as provider we don't allocate.
-        if (l2.hit && (l2.pred == resolveDir) && !l2.shorter) {
+        if (llbp.hit && (llbp.pred == resolveDir) && !llbp.shorter) {
             ALLOC = false;
         }
 
@@ -641,19 +364,19 @@ void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
 
     }
 
-
     // Do the actual allocation
     // In case LLBP was the provider we overwrite the history length
-    // of the TAGE prediction.
+    // of the TAGE prediction. This forces the TAGE allocation
+    // to start allocating with the history length of the LLBP.
     auto tmp2 = HitBank;
-    if (l2.isProvider) {
-        HitBank = l2.histLength;
+    if (llbp.isProvider) {
+        HitBank = llbp.histLength;
     }
     int nalloc = 0;
     if (ALLOC) {
         nalloc = 1+nnn;
         DPRINTF("Alloc:%i,%i, HL:%i, L2:[H:%i,S:%i,P:%i,D:%i]\n",
-                stats.totalAllocInit, stats.total, HitBank, l2.hit, l2.shorter, l2.isProvider, l2.pred);
+                stats.totalAllocInit, stats.total, HitBank, llbp.hit, llbp.shorter, llbp.isProvider, llbp.pred);
     }
 
     allocateTables(nalloc, pc, resolveDir);
@@ -661,107 +384,11 @@ void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
 
     // 2. The LLBP + TAGE table updates
     // We only update either the TAGE or the LLBP tables.
-    L2Update(pc, resolveDir, predDir);
+    llbpUpdate(pc, resolveDir, predDir);
 
     // 3. Finally the statistical corrector
     SCLUpdate(pc, resolveDir, predDir);
 }
-
-
-// Specialized update function of the primary predictor
-//
-bool LLBP::tageUpdateL1(uint64_t pc, bool resolveDir) {
-
-    bool update_base = false;
-    bool move_out = false;
-
-    // update predictions
-    if (HitBank > 0) {
-        if (tageConf == LowConf) {
-            if (LongestMatchPred != resolveDir) {
-                // acts as a protection
-                if (AltBank > 0) {
-                    ctrupdate(AltEntry->ctr, resolveDir, cwidth);
-                } else {
-                    update_base = true;
-                }
-            }
-        }
-
-#ifdef MOVE_ON_CORRECT
-        move_out = LongestMatchPred == resolveDir;
-#endif
-
-        // Do the actual counter update
-        ctrupdate(HitEntry->ctr, resolveDir, cwidth);
-        // sign changes: no way it can have been useful
-        if (HitEntry->ctr == (resolveDir ? 0 : -1)) {
-            HitEntry->u = 0;
-            move_out = false;
-        }
-
-        // If both the longest and alternate predictions where correct
-        // we can possible free the longest entry to use it for other
-        // predictions.
-        // We clear this entry by clearing the useful bit.
-        if (isNotUseful(resolveDir)) {
-            if (HitEntry->u == 1) {
-                HitEntry->u--;
-                move_out = false;
-            }
-        }
-        // If the longest hit was correct but the alternative prediction
-        // was not promote this entry to be useful.
-        if (isUseful(resolveDir)) {
-            if (HitEntry->u < (1 << uwidth) - 1)
-                HitEntry->u++;
-            HitEntry->useful++;
-            move_out = true;
-// #if defined(ALLOC_BOTH)
-//             auto ctx = llbpStorage.get(getCurContext(pc));
-//             if (ctx) {
-//                 auto ptrn = ctx->patterns.get(HitEntry->key);
-//                 if (ptrn) {
-//                     ptrn->useful++;
-//                 }
-//             }
-// #endif
-        }
-        DPRINTIF(COND,"TageUpdate: idx:%d, ctr:%i,u:%i,T:%i\n",
-                HitBank, HitEntry->ctr, HitEntry->u, HitEntry->tag);
-
-        if (move_out) {
-            // In case an entry became useful or provided a correct predicton
-            // try to move it into the S1 predictor.
-            // If successful the u-bit is cleared to make it available
-            // for new allocations.
-
-#ifndef MOVE_ON_ALLOC
-#if defined(MOVE_ON_CORRECT) || defined(MOVE_ON_USEFUL)
-            // S1MoveOut(HitBank, pc, resolveDir);
-
-            if (L2Allocate(HitBank, pc, resolveDir, true)) {
-                HitEntry->u = 0;
-            }
-#endif
-#endif
-        }
-
-    } else {
-        update_base = true;
-    }
-
-    // END TAGE UPDATE
-    return update_base;
-}
-
-
-
-
-
-
-
-
 
 
 
@@ -769,98 +396,40 @@ bool LLBP::tageUpdateL1(uint64_t pc, bool resolveDir) {
 // LLBP PREDICTOR
 /////////////////////////////////////////////////////////////////////////////////
 
-void LLBP::L2Predict(uint64_t pc) {
-
-    HitIdx = 0;
+void LLBP::llbpPredict(uint64_t pc) {
 
     // Calculate indices and tags
     // We need to do this explicity because we perform the prediction
     // before the TAGE prediction.
     calcIndicesAndTags(pc);
 
-    L2HitEntry = nullptr;
-    l2.histLength = 0;
-    l2.isProvider = false;
+    llbpEntry = nullptr;
+    llbp = {};
 
     for (int i = 1; i <= nhist; i++) {
 
         if (!NOSKIP[i]) continue;
 
-
-
-        uint64_t hash = 0;
-
         // We don't use all history lengths. Only 16
+        // By using the lower bits for the table number we can
+        // use it to manage the assocativity of the different history lengths.
         auto _i = fltTables.contains(i) ? fltTables[i] : i;
-        hash |= uint64_t(_i);
         // Table index (10 bits)
 
 
-#define MAKE_KEY
-
-#ifdef MAKE_KEY
-        auto _key = 0;
-        _key = pc;
-        // _key ^= (pc >> (abs(logg[i] - i) + 1));
-
-        // _key ^= tag1FHist[i]->value ^ (tag2FHist[i]->value << 1);
+        auto _key =  pc;
         _key ^= fghrT1[i]->value ^ (fghrT2[i]->value << 1);
-        // _key ^= fghrT1[i]->value;
-        // _key = _idx;
-
-
-        // _key &= ((1 << (TTWidth + 4 * (i >= born))) - 1);
+        // Mask the patterns bits
         _key &= ((1 << TTWidth) - 1);
 
-        hash |= uint64_t(_key) << 10ULL;
-#else
+        KEY[i] = uint64_t(_key) << 10ULL | uint64_t(_i);
 
-        // Index
-        auto _idx = 0;
-        _idx = pc ^ (pc >> (abs(logg[i] - i) + 1));
-        _idx ^= indexFHist[i]->value;
-
-        _idx &= ((1 << (logg[i])) - 1);
-
-        auto _tag = 0;
-        _tag = pc;
-        _tag ^= tag1FHist[i]->value ^ (tag2FHist[i]->value << 1);
-
-        // auto _key = _tag;
-
-        // _tag &= ((1 << (TB[i])) - 1);
-        _tag &= ((1 << TTWidth) - 1);
-
-
-        // hash |= uint64_t(indexFHist[i]->value & ((1 << (logg[i])) - 1)) << 6ULL;
-        // // PC rest of the bits
-        // hash |= uint64_t(pc) << (16ULL);
-
-        hash |= uint64_t(_tag) << 6ULL;
-        // uint64_t ls = 20;
-        // hash |= uint64_t(_idx) << 20ULL;
-
-        // auto _key = _idx ^ (_tag << 2);
-
-
-        // _key &= ((1 << TTWidth) - 1);
-
-        // hash |= uint64_t(_key) << 10ULL;
-
-#endif
-
-
-        KEY[i] = hash;
-
-        // KEY[i] = makeKey(pc, i);
     }
 
 
 
     // Get the current context (CCID)
-
-    // Try full context first
-    auto ctx_key = getCurContext(pc);
+    auto ctx_key = rcr.getCCID();
     PRINTIF(COND2,"%i L2Predict: %lx\n", branchCount, ctx_key);
     HitContext = llbpStorage.get(ctx_key);
 
@@ -868,17 +437,15 @@ void LLBP::L2Predict(uint64_t pc) {
     if (HitContext) {
         for (int i = nhist; i > 0; i--) {
             if (NOSKIP[i]) {
-                // if (hitOnZeroTag && (GTAG[i] == 0)) {
-                //     infHistories[KEY[i]].tag = 0;
-                //     infHistories[KEY[i]].length = i;
-                // }
-                L2HitEntry = HitContext->patterns.get(KEY[i]);
+                llbpEntry = HitContext->patterns.get(KEY[i]);
 
 
-                if (L2HitEntry) {
-                    HitIdx = i;
-                    hitVal[1] = L2HitEntry->ctr;
-                    l2.histLength = i;
+                if (llbpEntry) {
+                    llbp.hit = i;
+                    llbp.pVal = llbpEntry->ctr;
+                    llbp.pred = llbp.pVal >= 0;
+                    llbp.conf = compConf(llbp.pVal, CtrWidth);
+                    llbp.histLength = i;
                     break;
                 }
             }
@@ -886,28 +453,22 @@ void LLBP::L2Predict(uint64_t pc) {
     }
 
 
-    if (HitIdx > 0) {
+    if (llbp.hit) {
         PRINTIF(COND,"S1Hit:%i,GI:%i,GT:%i,c:%i\n",
-        L2HitEntry->length, GI[L2HitEntry->length], GTAG[L2HitEntry->length],
-        L2HitEntry->ctr);
-
-        // l2.l2provider = true;
+        llbpEntry->length, GI[llbpEntry->length], GTAG[llbpEntry->length],
+        llbpEntry->ctr);
     }
 
-    l2.hit = (HitIdx > 0);
-    l2.pVal = l2.hit ? hitVal[1] : BIM-2;
-    l2.pred = l2.hit ? l2.pVal >= 0 : base_pred;
-    l2.conf = compConf(l2.pVal, (HitIdx == 0) ? 2 : CtrWidth);
-    l2.shorter = !l2.hit;
-
+    // In case of timing simulation we check if the entry was already
+    // prefetched.
     if (simulateTiming) {
-        L2PredHit = patternBuffer.get(ctx_key);
-        if (L2PredHit) {
-            L2PredHit->locked = false;
+        pbEntry = patternBuffer.get(ctx_key);
+        if (pbEntry) {
+            pbEntry->locked = false;
         }
-        l2.prefetched = l2.hit && L2PredHit;
+        llbp.prefetched = llbp.hit && pbEntry;
     } else {
-        l2.prefetched = (ticks - lastMispredict) >= hashSk;
+        llbp.prefetched = true;
     }
 
 }
@@ -915,86 +476,48 @@ void LLBP::L2Predict(uint64_t pc) {
 
 
 // PREDICTOR UPDATE
-void LLBP::L2Update(uint64_t pc, bool resolveDir, bool predDir) {
-
+void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
 
     // Update ----------------------------------------------------
-    bool base_correct = (resolveDir == base_pred);
-    bool l2_correct = (resolveDir == l2.pred);
-    bool l1_correct = HitBank ? (LongestMatchPred == resolveDir) :
-                      AltBank ? (alttaken == resolveDir) : (bim_pred == resolveDir);
-    bool l2_useful = l2_correct && !l1_correct;
-
     bool updateBim = false;
-    bool updateL1 = true;
-    bool updateL2 = false;
-
-#ifdef DONT_PREDICT_L2
-    updateL2 = l2.hit;
-    updateL1 = true;
-#else
-    updateL2 = l2.isProvider;
-    // updateL2 = l2.hit;
-    updateL1 = !l2.isProvider;
-    // updateL1 = true;
-
-#ifdef REMOVE_L2_IF_L1_SAME
-    if (l2.isProvider && (HitBank == l2.histLength)) {
-        updateL1 = true;
-    }
-#endif
+    bool updateL2 = llbp.isProvider;
+    bool updateL1 = !llbp.isProvider;
 
 
-#endif
-
-
-    // In case level 2 provided the prediction
-    // update the switching tables
+    // Only the providing component is updated.
+    // If the prediction came from LLBP its pattern gets updated.
     if (updateL2) {
-        ctrupdate(L2HitEntry->ctr, resolveDir, CtrWidth);
+        ctrupdate(llbpEntry->ctr, resolveDir, CtrWidth);
 
-#ifdef L2_SORT_CTX_CORR
-        ctrupdate(HitContext->replace, l2_correct, CtxReplCtrWidth);
-#endif
-
-
-
-        DPRINTIF(COND,"S2Update: idx:%d, HL:%d ctr:%i,u:%i,T:%i\n",
-                HitIdx, L2HitEntry->length, L2HitEntry->ctr, 0, L2HitEntry->tag);
-
-#ifdef L2_SORT_CTX_NCONF
         // This function updates updates the context replacement counter
         // - If a pattern becomes confident (correct prediction)
         //   the replacement counter is increased
         // - If a pattern becomes low confident (incorrect prediction)
         //   the replacement counter is decreased
-        if (L2HitEntry->ctr == (resolveDir ? 1 : -2)) {
-        // else if (L2HitEntry->ctr == (resolveDir ? 2 : -3)) {
+        if (llbpEntry->ctr == (resolveDir ? 1 : -2)) {
+        // else if (llbpEntry->ctr == (resolveDir ? 2 : -3)) {
             // entry became medium confident
             ctrupdate(HitContext->replace, true, CtxReplCtrWidth);
         }
-        else if (L2HitEntry->ctr == (resolveDir ? -1 : 0)) {
-        // else if (L2HitEntry->ctr == (resolveDir ? -2 : 1)) {
+        else if (llbpEntry->ctr == (resolveDir ? -1 : 0)) {
+        // else if (llbpEntry->ctr == (resolveDir ? -2 : 1)) {
             // entry became low confident
             ctrupdate(HitContext->replace, false, CtxReplCtrWidth);
         }
-#endif
 
-
-        if (!l2_correct && (l2.conf == LowConf)) {
-            // if (HitBank > 0) {
-            //     ctrupdate(HitEntry->ctr, resolveDir, CtrWidth);
-            // } else {
-                updateBim = true;
-            // }
+        // If the prediction wrong update also the BIM
+        if (!llbpCorrect(resolveDir) && (llbp.conf == LowConf)) {
+            updateBim = true;
         }
     }
 
+    // If the prediction was from the TAGE predictor update it.
     if (updateL1) {
-        // Update the first level TAGE
-        updateBim = tageUpdateL1(pc, resolveDir);
+        updateBim = tageUpdate(pc, resolveDir);
     }
 
+    // The base predictor is sometimes updated if the confidence of the
+    // prediction is low.
     if (updateBim) {
 
         // If the prediction was from the base predictor, update it.
@@ -1004,109 +527,48 @@ void LLBP::L2Update(uint64_t pc, bool resolveDir, bool predDir) {
     }
 
     // Usefulness ------------------------------------------------
-    if (l2.hit) {
+    if (llbp.hit) {
         updateL2Usefulness(resolveDir);
     }
 
-//     // Update the L2 predictor
-    if (simulateTiming && L2PredHit) {
+
+    // Update the pattern buffers statistics
+    // and dirty bits.
+    if (simulateTiming && pbEntry) {
         if (updateL2) {
-            L2PredHit->dirty = true;
+            pbEntry->dirty = true;
         }
-        if (l2.hit) {
-            L2PredHit->used = true;
+        if (llbp.hit) {
+            pbEntry->used = true;
         }
-        if (l2_useful) {
-            L2PredHit->useful = true;
+        if (llbpUseful(resolveDir)) {
+            pbEntry->useful = true;
         }
     }
-
 }
 
-bool LLBP::L2Allocate(int histLen, uint64_t pc, bool taken, bool from_l1) {
-
-
-
-#ifdef USE_L2_AS_VICTIM
-    auto& victim = gtable[histLen][GI[histLen]];
-    auto ctx_key = victim.ctx;
-    auto k = victim.key;
-    auto tag = victim.tag;
-    auto idx = victim.idx;
-    histLen = victim.hlen;
-    pc = victim.pc;
-    taken = victim.ctr >= 0;
-
-    bool move = true;
-    switch (victim.uselessReason) {
-#ifdef DONT_MOVE_BEFORE_USEFUL
-        case 0: move = false; break;
-#endif
-#ifdef DONT_MOVE_SIGN_CHANGE
-        case 1: move = false; break;
-#endif
-#ifdef DONT_MOVE_ALT_SAME
-        case 2: move = false; break;
-#endif
-#ifdef DONT_MOVE_URESET
-        case 3: move = false; break;
-#endif
-#ifdef DONT_MOVE_L2_USEFUL
-        case 4: move = false; break;
-#endif
-        default:
-            // assert(false);
-        break;
-    }
-    if (!move) return false;
-
-    DPRINTIF(COND,"L1Evict:%i,GI:%i,T:%i,K:%#x,C:%#x\n", histLen, GI[histLen], victim.tag, victim.key, victim.ctx);
-#endif
-
-
+bool LLBP::llbpAllocate(int histLen, uint64_t pc, bool taken) {
 
 #ifdef FILTER_TABLES
-
     if (!fltTables.contains(histLen)) {
         return false;
     }
 #endif //FILTER_TABLES
 
 
-    // DPRINTIF(COND,"L2Alloc:%i,GI:%i,GT:%i\n", histLen, GI[histLen], GTAG[histLen]);
-
-
-#ifndef USE_L2_AS_VICTIM
-
-
     // Create context key and pattern key
-    auto ctx_key = getCurContext(pc);
+    auto ctx_key = rcr.getCCID();
     auto k = KEY[histLen];
-
-    // Make a tag without hashing the PC
-    // auto tag = gtag(pc, histLen);
-    // auto idx = gindex(pc, histLen);
-    auto tag = GTAG[histLen];
-    auto idx = GI[histLen];
-#endif
-
 
     auto ctx = allocateNewContext(pc, ctx_key);
 
-
-    // Get the pattern
+    // Check if the pattern already exists in LLBP.
     auto ptrn = ctx->patterns.get(k);
-
     if (ptrn) {
-
-        if (from_l1) {
-            ptrn->ctr = HitEntry->ctr;
-            ptrn->dir = HitEntry->ctr >= 0;
-        }
-
         return true;
     }
 
+    // No pattern found. Allocate a new one.
     // Sorting before allocation to find the victim
 
 #ifdef L2_SORT_PTRN
@@ -1114,28 +576,19 @@ bool LLBP::L2Allocate(int histLen, uint64_t pc, bool taken, bool from_l1) {
 #endif
 
 #ifdef LLBP_CONSTRAINED
-
     ptrn = ctx->patterns.getVictim(k);
-    evictPattern(ctx_key, ptrn);
 #endif
 
     ptrn = ctx->patterns.insert(k);
 
     ptrn->length = histLen;
-    ptrn->tag = tag;
-    ptrn->idx = idx;
     ptrn->useful = 0;
     ptrn->correct = 0;
     ptrn->key = k;
     ptrn->pc = pc;
 
-    if (from_l1) {
-        ptrn->ctr = HitEntry->ctr;
-        ptrn->dir = HitEntry->ctr >= 0;
-    } else {
-        ptrn->ctr = taken ? 0 : -1;
-        ptrn->dir = taken;
-    }
+    ptrn->ctr = taken ? 0 : -1;
+    ptrn->dir = taken;
 
     return true;
 }
@@ -1146,6 +599,7 @@ LLBP::Context* LLBP::allocateNewContext(uint64_t pc, uint64_t ctx_key) {
 
     Context* ctx = llbpStorage.get(ctx_key);
 
+    // If the context does not exist we allocate a new one.
     if (!ctx) {
 
 #ifdef L2_SORT_CTX
@@ -1154,19 +608,16 @@ LLBP::Context* LLBP::allocateNewContext(uint64_t pc, uint64_t ctx_key) {
 
         // Ensure the victim is not in the L2 predictor
         ctx = llbpStorage.getVictim(ctx_key);
-        if (ctx) {
-            for (auto& pt : ctx->patterns.getMap()) {
-                evictPattern(ctx_key, &(pt.second->second), true);
-            }
-        }
 
+        // If the victim context is still in pattern buffer
+        // we need to remove it.
         if (simulateTiming && ctx) {
 
             if (patternBuffer.exists(ctx->key)) {
                 patternBuffer.erase(ctx->key);
             }
 
-            // Also invalidate all entries in the preload queue
+            // Also invalidate all entries in the prefetch queue
             // with this key.
             auto n = prefetchQueue.size();
             prefetchQueue.erase(std::remove_if(
@@ -1175,11 +626,11 @@ LLBP::Context* LLBP::allocateNewContext(uint64_t pc, uint64_t ctx_key) {
                 prefetchQueue.end());
         }
 
-        // Allocate a new context in the main buffer.
-        ctx = llbpStorage.insert(ctx_key, pc);
+        // Allocate a new context in the LLBP storage.
+        ctx = llbpStorage.allocate(ctx_key, pc);
 
         if (simulateTiming && ctx) {
-            // Newly allocated.
+            // Put the newly allocated entry into the PB.
             PBEntry entry(ctx_key);
             entry.valid = true;
             entry.dirty = true;
@@ -1193,54 +644,47 @@ LLBP::Context* LLBP::allocateNewContext(uint64_t pc, uint64_t ctx_key) {
 }
 
 
-void LLBP::evictPattern(uint64_t ctx_key, HistEntry* ptrn, bool ctx_evict) {
-    if (!ptrn) return;
 
-#ifdef NO_EVICT_LONGER
-    if (ptrn->length > histLen) {
-        l2stats.noEvictLonger++;
-        return false;
+int LLBP::allocate(int Tidx, uint64_t pc, bool taken) {
+
+    int alloc_res = TageBase::allocate(Tidx, pc, taken);
+
+    // Get the newly allocated entry and mark with the context and key
+    if (alloc_res > 0) {
+        auto& entry = gtable[Tidx][GI[Tidx]];
+        entry.ctx = rcr.getCCID();
+        entry.key = KEY[Tidx];
+        DPRINTIF(COND,"L1Alloc:%i,GI:%i,T:%i,K:%#x,C:%#x\n", Tidx, GI[Tidx], entry.tag, entry.key, entry.ctx);
     }
-#endif
-    // auto _i = ctx->patterns.index(k);
-    // printf("Evict: TN:%lx index:%lx key:%lx, \n", histLen, _i, k);
-    // setIndex.insert(_i);
 
+    if (alloc_res <= 0) {
+        // Allocation not successful -> we also don't allocate in the LLBP
+        return alloc_res;
+    }
 
-    auto& v_pattern = allPatterns[ctx_key][ptrn->key];
-    v_pattern.length = ptrn->length;
-    v_pattern.key = ptrn->key;
-    v_pattern.idx = ptrn->idx;
-    v_pattern.pc = ptrn->pc;
-
-    v_pattern.correct += ptrn->correct;
-    v_pattern.incorrect += ptrn->incorrect;
-    v_pattern.useful += ptrn->useful;
-    v_pattern.evicted += 1;
-    if (ctx_evict)
-        v_pattern.evicted_ctx += 1;
-
+    // Try allocating in the LLBP.
+    if (llbpAllocate(Tidx, pc, taken)) {
+        stats.allocations[Tidx]++;
+        stats.totalAllocations++;
+        return 1;
+    }
+    return alloc_res;
 }
 
-
+// Prefetch functionality
 
 void LLBP::prefetch() {
 
     if (warmup) return;
 
-    // Its impossible that we see two prefetches per cycle.
-    // assert(prefetchQueue.empty() || (prefetchQueue.back().prefetchtime != ticks));
-
     // Perform the prefetching -----
     // Calculate the hash from the head of the history
-    // auto ctx_key = calcHash(bbv[0], hashN, 0, hashSh) & CTX_MASK;
-    auto ctx_key = contexts[2].cur;
-
+    auto ctx_key = rcr.getPCID();
     PRINTIF(COND2,"%i/%i Prefetch: %lx -> ", ticks, branchCount, ctx_key);
 
 
 
-    // First check the preload queue if this entry is already enquened.
+    // First check the preload queue if this entry is already enqueued.
     auto it = std::find_if(
         prefetchQueue.begin(), prefetchQueue.end(),
                         [ctx_key](auto& e)
@@ -1272,16 +716,17 @@ void LLBP::prefetch() {
     }
     PRINTIF(COND2,"\n");
 
-    // assert(prefetchQueue.size() <= hashSk + 1);
 }
 
 void LLBP::squashPrefetchQueue(bool btbMiss) {
-    lastMispredict = ticks;
     if (btbMiss)
         l2stats.pfDroppedBTBMiss += prefetchQueue.size();
     else
         l2stats.pfDroppedMispredict += prefetchQueue.size();
     prefetchQueue.clear();
+
+    // Once all prefetches are squashed we trigger prefetches
+    // for an upcomming context.
     if (btbMiss)
         prefetch();
 }
@@ -1295,7 +740,7 @@ void LLBP::tickPrefetchQueue() {
         auto& pf_entry = prefetchQueue.front();
 
         // If the prefetch delay has passed
-        if (ticks - pf_entry.prefetchtime >= (accessDelay-1)) {
+        if (ticks - pf_entry.prefetchtime >= (accessDelay)) {
 
             PRINTIF(COND2," Install in Cache: %lx\n", pf_entry.key);
             pf_entry.locked = true;
@@ -1331,128 +776,6 @@ void LLBP::installInPB(PBEntry &entry, bool bypass) {
 }
 
 
-
-
-int LLBP::allocate(int Tidx, uint64_t pc, bool taken) {
-
-    int alloc_res = -1;
-#if defined(USE_L2_FOR_TRAINING) || defined(USE_ONLY_L2)
-#ifdef FILTER_TOPN_BRANCHES
-    if (!tracePCs.contains(pc)) {
-        alloc_res = TageBase::allocate(Tidx, pc, taken);
-    }
-#endif
-#else
-    alloc_res = TageBase::allocate(Tidx, pc, taken);
-#endif
-
-    // Get the newly allocated entry and mark with the context and key
-    if (alloc_res > 0) {
-        auto& entry = gtable[Tidx][GI[Tidx]];
-        entry.ctx = getCurContext(pc);
-        entry.key = KEY[Tidx];
-        DPRINTIF(COND,"L1Alloc:%i,GI:%i,T:%i,K:%#x,C:%#x\n", Tidx, GI[Tidx], entry.tag, entry.key, entry.ctx);
-
-    }
-
-#ifndef ALLOC_BOTH
-    if (alloc_res > 0) {
-        // Allocation successful
-        return alloc_res;
-    }
-#endif
-
-#ifdef ALLOC_SIMULTANEOUS
-    if (alloc_res <= 0) {
-        // Allocation not successful -> we also don't allocate in the L2
-        return alloc_res;
-    }
-#endif
-
-
-    // Allocation in the main TAGE not possible.
-    // Allocate instead entries in the S1
-
-#ifdef MOVE_ON_ALLOC
-        if (L2Allocate(Tidx, pc, taken)) {
-
-#ifndef DONT_PREDICT_L2
-            stats.allocations[Tidx]++;
-            stats.totalAllocations++;
-            return 1;
-#endif
-        }
-#endif
-
-
-    return alloc_res;
-}
-
-
-// int LLBP::promote(HistEntry* l2entry) {
-//     l2stats.l1promote++;
-
-//     int idx = l2entry->length;
-//     auto& entry = gtable[idx][l2entry->idx];
-//     if (entry.tag == l2entry->tag) {
-//         l2stats.l1promoteExits++;
-//         return 0;
-//     }
-
-//     if (entry.u != 0) {
-//         // DPRINTIF(COND,"NoAlloc:%i,GI:%i,GT:%i,pc%lx\n", idx, GI[idx], GTAG[idx],entry.pc);
-//         l2stats.l1promoteFail++;
-//         return -1;
-//     }
-
-// //     if (entry.pc != 0) {
-// //         if (!overwriteNotUseful)
-// //             return -1;
-
-// //         DPRINTIF(COND,"AOverwrite:%i,GI:%i,GT:%i,pc%lx\n", idx, GI[idx], GTAG[idx],entry.pc);
-// //         stats.overwriteAlloc[idx]++;
-// //     }
-
-// // #define OPTREMP
-// // // the replacement is optimized with a single u bit: 0.2 %
-// // #ifdef OPTREMP
-// //     if (abs(2 * entry.ctr + 1) > 3) {
-// //         if (entry.ctr > 0)
-// //             entry.ctr--;
-// //         else
-// //             entry.ctr++;
-// //         return 0;
-// //     }
-// // #endif
-
-//     // evict(entry, idx);
-//     // int c = checkReuse(entry, idx, pc,taken);
-
-//     DPRINTIF(COND,"Alloc:%i,GI:%i,GT:%i\n",
-//                   idx, l2entry->idx, l2entry->tag);
-
-//     entry.tag = l2entry->tag;
-//     entry.pc = l2entry->pc;
-//     entry.ctx = HitContext->key;
-//     entry.key = l2entry->key;
-//     // entry.ctx = ;
-
-//     entry.ctr = saturate(l2entry->ctr, cwidth);
-
-//     // entry.u = 0;
-//     stats.allocations[idx]++;
-//     stats.totalAllocations++;
-//     l2stats.l1promoteSuccess++;
-//     entry.newalloc = true;
-//     entry.allocTime = allocID[idx]++;
-//     if (entry.correct < 0) entry.correct = 0;
-
-//     return 1;
-// }
-
-
-
-
 void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
     TageSCL::updateStats(resolveDir, predDir, pc);
@@ -1461,7 +784,7 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
     // Check if storing the last history would had been useful.
     auto correct = predDir == resolveDir;
 
-    auto llbp_correct = l2.isProvider && (resolveDir == l2.pred);
+    auto llbp_correct = llbp.isProvider && (resolveDir == llbp.pred);
 
     bool prim_correct = (scl_provider == STC) ? (sc_pred == resolveDir) :
                         HitBank ? (LongestMatchPred == resolveDir) :
@@ -1471,8 +794,8 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
     bool llbp_useful = llbp_correct && !prim_correct;
 
 
-    if (l2.hit) {
-        if (l2.isProvider) {
+    if (llbp.hit) {
+        if (llbp.isProvider) {
             if (llbp_correct) {
                 if (prim_correct)
                     l2stats.l2OverrideSameCorr++;
@@ -1484,7 +807,7 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
                 else
                     l2stats.l2OverrideSameWrong++;
             }
-            if (L2HitEntry->pc != pc) {
+            if (llbpEntry->pc != pc) {
                 if (llbp_correct)
                     l2stats.ovrPosAlias++;
                 else {
@@ -1502,24 +825,24 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
     // Hits for contexts and patterns
     if (HitContext) {
         l2stats.l2CtxHit++;
-        if (L2HitEntry) {
+        if (llbpEntry) {
             l2stats.l2PtrnHit++;
         }
     }
 
 
-    if (l2.isProvider) {
+    if (llbp.isProvider) {
         l2stats.l2Prov++;
-        llbpProvLength.insert(l2.histLength);
+        llbpProvLength.insert(llbp.histLength);
         if (llbp_correct) {
             l2stats.l2Correct++;
-            L2HitEntry->correct++;
+            llbpEntry->correct++;
             HitContext->correct++;
             if (llbp_useful) {
 
-                L2HitEntry->useful++;
+                llbpEntry->useful++;
                 HitContext->useful++;
-                if (L2HitEntry->useful == 1) {
+                if (llbpEntry->useful == 1) {
                     HitContext->usefulPtrns++;
                 }
             }
@@ -1527,8 +850,8 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
         } else {
             l2stats.l2Wrong++;
-            llbpMispLength.insert(l2.histLength);
-            L2HitEntry->incorrect++;
+            llbpMispLength.insert(llbp.histLength);
+            llbpEntry->incorrect++;
             HitContext->incorrect++;
         }
     } else {
@@ -1567,12 +890,12 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
         }
     }
 
-    if (l2.hit && !l2.isProvider) {
-        if (l2.shorter) {
+    if (llbp.hit && !llbp.isProvider) {
+        if (llbp.shorter) {
             l2stats.l2notBecauseShorter++;
         }
 
-        if (!l2.prefetched) {
+        if (!llbp.prefetched) {
             l2stats.l2notBecauseNotPrefetched++;
         }
     }
@@ -1583,30 +906,23 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 // Predictor update ----------------------------------------
 void LLBP::UpdatePredictor(uint64_t PC, bool resolveDir,
                                   bool predDir, uint64_t branchTarget) {
-    // Update our own base predictor
 
-    branchCount++;
-    stats.condBranches++;
-    if (resolveDir)
-        stats.takenBranches++;
+    // Update the TAGE and LLBP predictors via the
+    // base class. This Will also update the histories and statistics.
+    Tage::UpdatePredictor(PC, resolveDir, predDir, branchTarget);
 
-    updateTables(PC, resolveDir, predDir);
-
-
-    updateHistory(PC, resolveDir, OPTYPE_JMP_DIRECT_COND, branchTarget);
-    updateStats(resolveDir, predDir, PC);
-
+    // Only thing left is the update of the prefetch queue and
+    // the context hash.
     bool do_prefetch = false;
     if (simulateTiming && (resolveDir != predDir)) {
         squashPrefetchQueue();
         do_prefetch = true;
     }
 
-    // pcHistory->push(PC, resolveDir);
-    // pcHistory->push((PC << 1 | resolveDir), resolveDir);
-
-    do_prefetch |= updateRuntimeHash(PC, OPTYPE_JMP_DIRECT_COND, resolveDir);
-
+    // In the default LLBP predictor there will be no update of the
+    // runtime hash for conditional branches. However, this model
+    // supports different types of histories.
+    do_prefetch |= rcr.update(PC, OPTYPE_JMP_DIRECT_COND, resolveDir);
     if (simulateTiming && do_prefetch) {
         prefetch();
     }
@@ -1618,10 +934,7 @@ void LLBP::TrackOtherInst(uint64_t PC, OpType opType, bool taken,
 
     TageSCL::TrackOtherInst(PC, opType, taken, branchTarget);
 
-    // pcHistory->push(PC, taken);
-    // pcHistory->push((PC << 1 | taken), taken);
-
-    auto do_prefetch = updateRuntimeHash(PC, opType, taken);
+    auto do_prefetch = rcr.update(PC, opType, taken);
     if (simulateTiming && do_prefetch) {
         PRINTIF(COND2,"%i/%i Prefetch: %lx/t:%i from UpdateOther -> ", ticks, branchCount, PC, opType);
         prefetch();
@@ -1639,45 +952,107 @@ void LLBP::updateGHist(const bool bit) {
 }
 
 
-bool LLBP::updateRuntimeHash(uint64_t pc, OpType opType, bool taken) {
+/************************************************************
+ * RCR Functionality
+ */
 
+LLBP::RCR::RCR(int _T, int _W, int _D, int _shift, int _CTWidth)
+    : CTWidth(_CTWidth), T(_T), W(_W), D(_D), S(_shift)
+{
+    bb[0].resize(maxwindow);
+    bb[1].resize(maxwindow);
+    ctxs = {0, 0};
+    printf("\n\nRCR: context hash config: [T:%i, W:%i, D:%i, S:%i, CTWidth:%i]\n",
+            T, W, D, S, CTWidth);
+}
+
+
+/*
+ * Given the {n} number of branches staring from vec[end-start]
+ * to vec[end-start-n-1] we create the hash function by shifting
+ * each PC by {shift} number if bits i.e.
+ *
+ *   000000000000|  PC  |    :vec[end-start]
+ * ^ 0000000000|  PC  |00    :vec[end-start-1]
+ * ^ 00000000|  PC  |0000    :vec[end-start-2]
+ *           .                     .
+ *           .                     .
+ *           .                     .
+ * ^ |  PC  |000000000000    :vec[end-start-n-1]
+ * ----------------------
+ *       final hash value
+ * */
+uint64_t LLBP::RCR::calcHash(std::list<uint64_t> &vec, int n, int start, int shift) {
+    uint64_t hash = 0;
+    if (vec.size() < (start + n)) {
+        return 0;
+    }
+    uint64_t sh = 0;
+    auto it = vec.begin();
+    std::advance(it, start);
+    for (; (it != vec.end()) && (n > 0); it++, n--) {
+        uint64_t val = *it;
+
+        // Shift the value
+        hash ^= val << uint64_t(sh);
+
+        sh += shift;
+        if (sh >= CTWidth) {
+            sh -= uint64_t(CTWidth);
+        }
+    }
+    return hash & ((1 << CTWidth) - 1);
+}
+
+uint64_t LLBP::RCR::getCCID() {
+    return ctxs.ccid & ((1 << CTWidth) - 1);
+}
+
+uint64_t LLBP::RCR::getPCID() {
+    return ctxs.pcid & ((1 << CTWidth) - 1);
+}
+
+
+bool LLBP::RCR::update(uint64_t pc, OpType opType, bool taken) {
+
+    branchCount++;
     // Hash of all branches
     auto isCall = (opType == OPTYPE_CALL_DIRECT_UNCOND)
                || (opType == OPTYPE_CALL_INDIRECT_UNCOND)
                || (opType == OPTYPE_CALL_DIRECT_COND);
 
 
-    switch (hashT) {
+    switch (T) {
         case 0: // All branches
-        bbv[0].push_front(pc);
-        bbv[1].push_front(branchCount);
+        bb[0].push_front(pc);
+        bb[1].push_front(branchCount);
         break;
 
         case 1: // Only calls
         if (isCall) {
-            bbv[0].push_front(pc);
-            bbv[1].push_front(branchCount);
+            bb[0].push_front(pc);
+            bb[1].push_front(branchCount);
         }
         break;
 
         case 2: // Only calls and returns
         if (isCall || (opType == OPTYPE_RET_UNCOND)) {
-            bbv[0].push_front(pc);
-            bbv[1].push_front(branchCount);
+            bb[0].push_front(pc);
+            bb[1].push_front(branchCount);
         }
         break;
 
         case 3: // Only unconditional branches
         if (opType != OPTYPE_JMP_DIRECT_COND) {
-            bbv[0].push_front(pc);
-            bbv[1].push_front(branchCount);
+            bb[0].push_front(pc);
+            bb[1].push_front(branchCount);
         }
         break;
 
         case 4: // All taken branches
         if (taken) {
-            bbv[0].push_front(pc);
-            bbv[1].push_front(branchCount);
+            bb[0].push_front(pc);
+            bb[1].push_front(branchCount);
         }
         break;
     }
@@ -1687,37 +1062,20 @@ bool LLBP::updateRuntimeHash(uint64_t pc, OpType opType, bool taken) {
     PRINTIF(COND,"UH:%llx, %i, %i\n", pc, opType, taken);
     // If the size has changed the hash has changed
     bool changed = false;
-    if (bbv[0].size() > window) {
+    if (bb[0].size() > maxwindow) {
         changed = true;
 
         // Resize the history
-        bbv[0].pop_back();
-        bbv[1].pop_back();
+        bb[0].pop_back();
+        bb[1].pop_back();
 
 
         // The current context.
-        updateContext(contexts[1], calcHash(bbv[0], hashN, hashSk, hashSh));
-        // The short context.
-        updateContext(contexts[3], calcHash(bbv[0], 2, hashSk, hashSh));
-
+        ctxs.ccid = calcHash(bb[0], W, D, S);
         // The prefetch context.
-        updateContext(contexts[2], calcHash(bbv[0], hashN, 0, hashSh));
-
-// #ifdef USE_L2_PRED_CACHE
-//         // Advance the predictor queue
-//         updateL2Predictor();
-// #endif
+        ctxs.pcid = calcHash(bb[0], W, 0, S);
     }
     return changed;
-}
-
-void LLBP::updateContext(CTX_t &ctx, uint64_t cur) {
-
-    if (ctx.cur != cur) {
-        ctx.prev = ctx.cur;
-        ctx.cur = cur;
-        ctx.lastSwitch = stats.total;
-    }
 }
 
 
@@ -1740,9 +1098,6 @@ void LLBP::setState(bool _warmup) {
 
 
 
-
-
-
 void LLBP::PrintStat(double instr) {
 
     TageSCL::PrintStat(instr);
@@ -1751,7 +1106,7 @@ void LLBP::PrintStat(double instr) {
     numHistPerContext.reset();
     numUsefulHistPerContext.reset();
 
-    int nPattern = 0, nUseful = 0, nUseful2 = 0;
+    int nPattern = 0, nUseful = 0;
     int nCtx = 0, nCtxUseful = 0;
 
     for (auto& ctx_pair : llbpStorage.getMap()) {
@@ -1759,7 +1114,6 @@ void LLBP::PrintStat(double instr) {
         auto& ctx = ctx_pair.second->second;
 
         int nuseful = 0;
-        int pos = 0;
         for (auto& pt : ctx.patterns.getMap()) {
             if (pt.second->second.useful > 0) {
                 nuseful++;
@@ -1777,7 +1131,7 @@ void LLBP::PrintStat(double instr) {
     }
 
 
-
+    printf("LLBP branch predictor stats -------\n");
 
     printf("LLBP:: CtxHit:%i(%.4f), PtrnHit:%i(%.4f)\n",
             l2stats.l2CtxHit, l2stats.l2CtxHit / (double)stats.total,

@@ -62,8 +62,6 @@ class BaseCache {
     key_t index(const key_t& key) { return key & _set_mask; }
 
     set_t& getSet(const key_t& key) {
-        auto i = index(key);
-        // printf("Index: %lx key:%lx, sm:%lx\n", i, key,_set_mask);
         return _cache[index(key)];
     }
 

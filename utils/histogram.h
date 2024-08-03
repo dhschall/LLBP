@@ -14,77 +14,6 @@
 
 #include "error.h"
 
-// struct Bucket {
-//     double mark;
-//     int count;
-//     double frequency;
-// };
-
-// std::string printHistogram(const std::vector<Bucket>& buckets) {
-//     int max = 0;
-//     for (const auto& b : buckets) {
-//         if (b.count > max) {
-//             max = b.count;
-//         }
-//     }
-
-//     std::ostringstream res;
-//     for (const auto& b : buckets) {
-//         int barLen = max > 0 ? static_cast<int>((b.count * 40 + max / 2) / max) : 0;
-//         res << "  " << std::fixed << std::setprecision(3) << b.mark << " [" << b.count << "]\t|"
-//             << std::string(barLen, '*') << "\n";
-//     }
-
-//     std::cout << "\n" << res.str();
-//     return res.str();
-// }
-
-// std::vector<Bucket> histogram(const std::vector<double>& data) {
-//     // std::vector<double> sortedLatencies = latencies;
-//     // std::sort(sortedLatencies.begin(), sortedLatencies.end());
-
-//     // double fastest = sortedLatencies[0];
-//     // double slowest = sortedLatencies[sortedLatencies.size() - 1];
-
-//     // Define upper and lower bounds
-//     double lower = 0.5;
-//     double upper = 5;
-//     int bc = 10;
-
-//     std::vector<double> buckets(bc + 1);
-//     std::vector<int> counts(bc + 1);
-
-//     double bs = (upper - lower) / static_cast<double>(bc);
-//     for (int i = 0; i < bc; ++i) {
-//         buckets[i] = lower + bs * static_cast<double>(i);
-//     }
-//     buckets[bc] = upper;
-
-//     int bi = 0;
-//     int max = 0;
-//     for (auto i : data) {
-//         if (data[i] <= buckets[bi]) {
-//             ++i;
-//             ++counts[bi];
-//             if (max < counts[bi]) {
-//                 max = counts[bi];
-//             }
-//         } else if (bi < static_cast<int>(buckets.size()) - 1) {
-//             ++bi;
-//         }
-//     }
-
-//     std::vector<Bucket> res(buckets.size());
-//     for (size_t i = 0; i < buckets.size(); ++i) {
-//         res[i] = Bucket{
-//             buckets[i],
-//             counts[i],
-//             static_cast<double>(counts[i]) / static_cast<double>(data.size())
-//         };
-//     }
-
-//     return res;
-// }
 
 template <typename T>
 class Histogram {
@@ -196,7 +125,7 @@ class Histogram {
 
 
     std::string print(bool perc=false, bool cdf=false, int width = 40) {
-        int _max = 0;
+        T _max = 0;
         for (const auto& b : buckets) {
             if (b.count > _max) {
                 _max = b.count;
@@ -248,15 +177,3 @@ class Histogram {
 
 };
 
-
-// template
-
-
-// int main() {
-//     std::vector<double> latencies = {1.234, 2, 2.345, 0.987, 3.456, 2.678, 0.789, 3.567};
-
-//     std::vector<Bucket> buckets = histogram(latencies);
-//     printHistogram(buckets);
-
-//     return 0;
-// }

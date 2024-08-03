@@ -53,8 +53,8 @@ TageBase::TageBase(TageConfig cfg)
         assoc_end(cfg.assoc_end),
         minhist(cfg.minhist),
         maxhist(cfg.maxhist),
-        LogG(cfg.LogG),
         LogB(cfg.LogB),
+        LogG(cfg.LogG),
         Tbits(cfg.Tbits),
         uwidth(cfg.uwidth),
         cwidth(cfg.cwidth),
@@ -164,7 +164,6 @@ void TageBase::reinit() {
 
 int TageBase::predictorsize() {
     int STORAGESIZE = 0;
-    int inter = 0;
 
     STORAGESIZE +=
         nbankhigh * (1 << (logg[born])) * (cwidth + uwidth + TB[born]);
@@ -461,7 +460,7 @@ void TageBase::updateHistory(const uint64_t pc, const bool taken,
 
 void TageBase::updateGHist(const bool bit) {
     ghr.push(bit);
-    for (uint32_t i = 1; i <= nhist; ++i) {
+    for (int i = 1; i <= nhist; ++i) {
         indexFHist[i]->update();
         tag1FHist[i]->update();
         tag2FHist[i]->update();
@@ -963,7 +962,7 @@ void TageBase::updateStats(bool taken, bool predtaken, uint64_t PC) {
 
 void TageBase::PrintStat(double instr) {
 
-    printf("AllBr:%i, CondBr:%i, TakenBr:%i, Ticks:%i\n",
+    printf("AllBr:%lu, CondBr:%i, TakenBr:%i, Ticks:%i\n",
             branchCount, stats.condBranches, stats.takenBranches,
             ticks
             );
@@ -994,7 +993,7 @@ void TageBase::PrintStat(double instr) {
             stats.baseProvTageSame, stats.baseProvTageWouldHaveCorrect,
             stats.baseProvAltSame, stats.baseProvAltWouldHaveCorrect
             );
-    printf("MPKI:: BASE:%.4f, TAGE:%.4f Red:%i (%.4f%) Instr:%i\n",
+    printf("MPKI:: BASE:%.4f, TAGE:%.4f Red:%i (%.4f) Instr:%i\n",
             (double)stats.baseMispred / (double)instr * 1000,
             (double)stats.tageMispred / (double)instr * 1000,
             int(stats.baseMispred-stats.tageMispred),
@@ -1002,13 +1001,6 @@ void TageBase::PrintStat(double instr) {
             int(instr));
 
 
-
-    int _n_total = 0;
-    int _n_tcorrect = 0;
-    int _n_tunused = 0;
-    int _n_tcorrect5 = 0;
-    int _n_tcorrect100 = 0;
-    int k = 0;
     for (int i = 0; i <= nhist; i++) {
         if (NOSKIP[i] || i == 0) {
 

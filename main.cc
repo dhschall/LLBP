@@ -118,7 +118,6 @@ uint64_t sim_instructions;
 // They update the BPU only for branches that are in the BTB which only
 // contains taken branches.
 std::unordered_set<uint64_t> takenPCs;
-bool updateNeverTaken = false;
 bool simulateBTB = false;
 
 
@@ -166,7 +165,6 @@ bool process_command_line(int argc, char** argv)
           ("output,o",     po::value<std::string>(&outfile), "output file")
           ("simulate-btb",  po::bool_switch(&simulateBTB)->default_value(false), "Simulate BTB")
           ("tabledump,t",  po::bool_switch(&tabledump)->default_value(false), "dump TAGE tables")
-          ("update-NT",    po::bool_switch(&updateNeverTaken)->default_value(false), "Update BPU for never taken branches (default: false)")
           ("maxbrinst,m",  po::value<uint64_t>(&max_br_instruction)->default_value(dMAX), "max number of branches to simulate")
           ("inst-sim,n",   po::value<uint64_t>(&sim_instructions)->default_value(DEF_SIM), "max number of instructions to simulate")
           ("inst-warm,w",  po::value<uint64_t>(&warmup_instructions)->default_value(DEF_WARMUP), "number to instructions to warmup")
@@ -327,24 +325,11 @@ int main(int argc, char* argv[]) {
                 case OPTYPE_JMP_DIRECT_COND: {
                     bool predDir = false;
 
-                    // In the real processor this would be done via the BTB.
-                    bool observedTaken = updateNeverTaken || takenPCs.contains(PC);
-
-                    if (observedTaken) {
-                        predDir = brpred->GetPrediction(PC);
-                        brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
-
-                    } else {
-                        brpred->FirstTimeUpdate(PC, branchTaken, branchTarget);
-
-                        // if (branchTaken) {
-                        //     brpred->FirstTimeUpdate(PC, branchTaken, branchTarget);
-                        // }
-                    }
+                    predDir = brpred->GetPrediction(PC);
+                    brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
 
                     if (branchTaken) {
                         total_stats.numTaken++;
-                        takenPCs.insert(PC);
                     }
 
                     if (predDir != branchTaken) {

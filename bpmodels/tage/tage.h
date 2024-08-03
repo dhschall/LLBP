@@ -100,7 +100,8 @@ class TageBase : public BasePredictor {
     const int minhist;  // 6  // not optimized so far
     const int maxhist;  // 3000
 
-
+    const int hystshift = 2;  // bimodal hysteresis shared by 4 entries
+    const int LogB;  // 13      // log of number of entries in bimodal predictor
     const int
         LogG;  // 10 /* logsize of the  banks in the  tagged TAGE tables */
     const int Tbits;  // 8
@@ -113,8 +114,6 @@ class TageBase : public BasePredictor {
 
     const int nnn =
         1;  // number of extra entries allocated on a TAGE misprediction (1+nnn)
-    const int hystshift = 2;  // bimodal hysteresis shared by 4 entries
-    const int LogB;  // 13      // log of number of entries in bimodal predictor
 
     static const int phistwidth = 27;  // width of the path history used in TAGE
     const int uwidth;  // u counter width on TAGE (2 bits not worth
