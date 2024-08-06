@@ -40,10 +40,10 @@ The infrastructure has been tested with the following system configuration:
 
 ```bash
 # Install cmake
-sudo apt install -y cmake libboost-all-dev build-essential pip
+sudo apt install -y cmake libboost-all-dev build-essential pip parallel
 
 # Python dependencies for plotting.
-pip install pandas matplotlib ipykernel
+pip install -r analysis/requirements.txt
 
 ```
 

@@ -97,22 +97,22 @@ for model in $BRMODELS; do
         OUTDIR="${OUT}/${fn}/"
         mkdir -p $OUTDIR
 
-
-
         CMD="\
             ./build/predictor $TRACE \
                 --model ${model} \
                 ${FLAGS} \
                 -w ${N_WARM} -n ${N_SIM} \
                 --output "${OUTDIR}/${model}-${POSTFIX}" \
-                > $OUTDIR/${model}-${POSTFIX}.txt 2>&1" &
+                > $OUTDIR/${model}-${POSTFIX}.txt 2>&1 &"
 
         commands+=("$CMD")
-
     done
 
 done
 
 echo "Running ${#commands[@]} simulations"
 
-# parallel --jobs $(nproc) ::: "${commands[@]}"
+parallel --jobs $(nproc) ::: "${commands[@]}"
+
+wait
+echo "Simulation complete. Go reap the results, you deserve it!!!!!!"
