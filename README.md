@@ -40,10 +40,10 @@ The infrastructure has been tested with the following system configuration:
 
 ```bash
 # Install cmake
-sudo apt install -y cmake libboost-all-dev build-essential pip
+sudo apt install -y cmake libboost-all-dev build-essential pip parallel
 
 # Python dependencies for plotting.
-pip install pandas matplotlib ipykernel
+pip install -r analysis/requirements.txt
 
 ```
 
@@ -124,7 +124,7 @@ If you use our work, please cite paper:
 ```
 @inproceedings{schall2024llbp,
   title={The Last-Level Branch Predictor},
-  author={Schall, David and Andreas Sandberg and Boris Grot},
+  author={Schall, David and Sandberg, Andreas and Grot, Boris},
   booktitle={Proceedings of the 57th Annual IEEE/ACM International Symposium on Microarchitecture},
   year={2024}
 }

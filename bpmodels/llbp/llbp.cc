@@ -145,7 +145,7 @@ LLBP::LLBP(LLBPConfig cfg)
         // but also maps each length the correct pattern set index.
         // E.e. for the four way associativity the following function
         // ensures that history length 6,10,13,14 gets assign
-        // 0,4,8,12 with the lowest two bits 0b00. Thus the set will
+        // 0,4,8,12 with the lowest two bits 0b00. Thus, the set will
         // be the same.
         auto bucket = n / cfg.ptrnAssoc;
         fltTables[i] = ((n%cfg.ptrnAssoc) << ceilLog2(cfg.ptrnAssoc) ) | bucket;
@@ -225,13 +225,13 @@ unsigned LLBP::chooseProvider() {
 
     bool chooseL2 = llbp.hit;
 
-    // If LLBP hits we don't use LLBP if it has a longer history
+    // If LLBP hits, we don't use LLBP if it has a longer history.
     if (chooseL2 && (llbp.histLength < HitBank)) {
         chooseL2 = false;
         llbp.shorter = true;
     }
 
-    // Don't override if the prefetch is to late.
+    // Don't override if the prefetch is too late.
     if (simulateTiming && !warmup && !llbp.prefetched) {
         chooseL2 = false;
     }
@@ -252,7 +252,7 @@ unsigned LLBP::chooseProvider() {
     if (tageConf != LowConf)
         return LONGEST;
 
-    // Use on low confidence if the USE_ALT_ON_NA is negative
+    // Use on low confidence if the USE_ALT_ON_NA is negative.
     if (use_alt_on_na[idxChooser()] < 0) {
         return LONGEST;
     }
@@ -274,7 +274,7 @@ bool LLBP::isUseful(bool taken) {
     if (llbp.hit) {
         return false;
     }
-    // If there was no hit in level 2 use the default algorithm.
+    // If there was no hit in LLBP use the default algorithm.
     return TageSCL::isUseful(taken);
 }
 
@@ -344,8 +344,8 @@ void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
         // length is shorter than the maximum we allocate.
         ALLOC = (tage_pred != resolveDir) & (HitBank < nhist);
 
-        // If LLBP was actually correct, it was longer than TAGE
-        // but it was not choosen as provider we don't allocate.
+        // If LLBP was actually correct, it was longer than TAGE,
+        // but it was not chosen as provider, then we don't allocate.
         if (llbp.hit && (llbp.pred == resolveDir) && !llbp.shorter) {
             ALLOC = false;
         }
@@ -383,7 +383,7 @@ void LLBP::updateTables(uint64_t pc, bool resolveDir, bool predDir) {
     // We only update either the TAGE or the LLBP tables.
     llbpUpdate(pc, resolveDir, predDir);
 
-    // 3. Finally the statistical corrector
+    // 3. Finally, the statistical corrector.
     SCLUpdate(pc, resolveDir, predDir);
 }
 
@@ -477,16 +477,16 @@ void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
 
     // Update ----------------------------------------------------
     bool updateBim = false;
-    bool updateL2 = llbp.isProvider;
-    bool updateL1 = !llbp.isProvider;
+    bool updateLLBP = llbp.isProvider;
+    bool updateTAGE = !llbp.isProvider;
 
 
     // Only the providing component is updated.
     // If the prediction came from LLBP its pattern gets updated.
-    if (updateL2) {
+    if (updateLLBP) {
         ctrupdate(llbpEntry->ctr, resolveDir, CtrWidth);
 
-        // This function updates updates the context replacement counter
+        // This function updates the context replacement counter
         // - If a pattern becomes confident (correct prediction)
         //   the replacement counter is increased
         // - If a pattern becomes low confident (incorrect prediction)
@@ -497,7 +497,6 @@ void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
             ctrupdate(HitContext->replace, true, CtxReplCtrWidth);
         }
         else if (llbpEntry->ctr == (resolveDir ? -1 : 0)) {
-        // else if (llbpEntry->ctr == (resolveDir ? -2 : 1)) {
             // entry became low confident
             ctrupdate(HitContext->replace, false, CtxReplCtrWidth);
         }
@@ -509,7 +508,7 @@ void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
     }
 
     // If the prediction was from the TAGE predictor update it.
-    if (updateL1) {
+    if (updateTAGE) {
         updateBim = tageUpdate(pc, resolveDir);
     }
 
@@ -532,7 +531,7 @@ void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
     // Update the pattern buffers statistics
     // and dirty bits.
     if (simulateTiming && pbEntry) {
-        if (updateL2) {
+        if (updateLLBP) {
             pbEntry->dirty = true;
         }
         if (llbp.hit) {
@@ -675,7 +674,7 @@ void LLBP::prefetch() {
     if (warmup) return;
 
     // Perform the prefetching -----
-    // Calculate the hash from the head of the history
+    // Calculate the hash from the head of the history.
     auto ctx_key = rcr.getPCID();
     PRINTIF(COND2,"%i/%i Prefetch: %lx -> ", ticks, branchCount, ctx_key);
 
@@ -689,14 +688,14 @@ void LLBP::prefetch() {
 
     if (it != prefetchQueue.end()) {
         PRINTIF(COND2," Hit in prefetchQueue %lx", it->key);
-        l2stats.l2PFHitInQueue++;
+        llbpstats.l2PFHitInQueue++;
     }
 
     // Second check if its already cached.
     else if (patternBuffer.exists(ctx_key)) {
-        // Copy the entry from the cache to the preload queue
+        // Copy the entry from the cache to the preload queue.
         PRINTIF(COND2," Hit in pattern cache");
-        l2stats.l2PFHitInCache++;
+        llbpstats.l2PFHitInCache++;
         patternBuffer.touch(ctx_key);
     }
 
@@ -704,7 +703,7 @@ void LLBP::prefetch() {
     // and needs to be prefetched.
     else if (llbpStorage.exists(ctx_key)) {
         PRINTIF(COND2," Hit in CI -> prefetch");
-        l2stats.l2PFHitInCI++;
+        llbpstats.l2PFHitInCI++;
         auto& pf_entry = prefetchQueue.emplace_back(ctx_key);
         pf_entry.valid = true;
         pf_entry.prefetchtime = ticks;
@@ -717,13 +716,13 @@ void LLBP::prefetch() {
 
 void LLBP::squashPrefetchQueue(bool btbMiss) {
     if (btbMiss)
-        l2stats.pfDroppedBTBMiss += prefetchQueue.size();
+        llbpstats.pfDroppedBTBMiss += prefetchQueue.size();
     else
-        l2stats.pfDroppedMispredict += prefetchQueue.size();
+        llbpstats.pfDroppedMispredict += prefetchQueue.size();
     prefetchQueue.clear();
 
     // Once all prefetches are squashed we trigger prefetches
-    // for an upcomming context.
+    // for an upcoming context.
     if (btbMiss)
         prefetch();
 }
@@ -732,7 +731,7 @@ void LLBP::tickPrefetchQueue() {
 
     // Tick should be called before the prediction is made.
 
-    // Install prefeches if the prefetch delay has passed.
+    // Install prefetches if the prefetch delay has passed.
     if (!prefetchQueue.empty()) {
         auto& pf_entry = prefetchQueue.front();
 
@@ -750,21 +749,21 @@ void LLBP::tickPrefetchQueue() {
 void LLBP::installInPB(PBEntry &entry, bool bypass) {
 
 
-    // First get the victim from the L2 predictor
+    // First get the victim from the LLBP predictor
     auto victim = patternBuffer.getVictim(entry.key);
 
     if (victim) {
 
-        // If the entry is locked due to ungoing prefetch. Don't install in
+        // If the entry is locked due to ongoing prefetch. Don't install in
         // PB but in LLBP right away.
         if (victim->locked && bypass) {
-            l2stats.pfDroppedLocked++;
-            l2stats.l2cacheDirtyEvict++;
+            llbpstats.pfDroppedLocked++;
+            llbpstats.l2cacheDirtyEvict++;
             return;
         }
 
-        if (victim->dirty) l2stats.l2cacheDirtyEvict++;
-        else l2stats.l2cacheCleanEvict++;
+        if (victim->dirty) llbpstats.l2cacheDirtyEvict++;
+        else llbpstats.l2cacheCleanEvict++;
         PRINTIF(COND2," Evict: %lx\n", victim->key);
     }
 
@@ -778,7 +777,7 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
     TageSCL::updateStats(resolveDir, predDir, pc);
 
 
-    // Check if storing the last history would had been useful.
+    // Check if storing the last history would have been useful.
     auto correct = predDir == resolveDir;
 
     auto llbp_correct = llbp.isProvider && (resolveDir == llbp.pred);
@@ -795,24 +794,24 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
         if (llbp.isProvider) {
             if (llbp_correct) {
                 if (prim_correct)
-                    l2stats.l2OverrideSameCorr++;
+                    llbpstats.l2OverrideSameCorr++;
                 else
-                    l2stats.l2OverrideGood++;
+                    llbpstats.l2OverrideGood++;
             } else {
                 if (prim_correct)
-                    l2stats.l2OverrideBad++;
+                    llbpstats.l2OverrideBad++;
                 else
-                    l2stats.l2OverrideSameWrong++;
+                    llbpstats.l2OverrideSameWrong++;
             }
             if (llbpEntry->pc != pc) {
                 if (llbp_correct)
-                    l2stats.ovrPosAlias++;
+                    llbpstats.ovrPosAlias++;
                 else {
-                    l2stats.ovrNegAlias++;
+                    llbpstats.ovrNegAlias++;
                 }
             }
         } else {
-            l2stats.l2NoOverride++;
+            llbpstats.l2NoOverride++;
         }
     }
 
@@ -821,18 +820,18 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
     // Hits for contexts and patterns
     if (HitContext) {
-        l2stats.l2CtxHit++;
+        llbpstats.l2CtxHit++;
         if (llbpEntry) {
-            l2stats.l2PtrnHit++;
+            llbpstats.l2PtrnHit++;
         }
     }
 
 
     if (llbp.isProvider) {
-        l2stats.l2Prov++;
+        llbpstats.l2Prov++;
         llbpProvLength.insert(llbp.histLength);
         if (llbp_correct) {
-            l2stats.l2Correct++;
+            llbpstats.l2Correct++;
             llbpEntry->correct++;
             HitContext->correct++;
             if (llbp_useful) {
@@ -846,7 +845,7 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
 
         } else {
-            l2stats.l2Wrong++;
+            llbpstats.l2Wrong++;
             llbpMispLength.insert(llbp.histLength);
             llbpEntry->incorrect++;
             HitContext->incorrect++;
@@ -856,12 +855,12 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
             case LONGEST:
             case ALT:
                 {
-                l2stats.tageProv++;
+                llbpstats.tageProv++;
                 auto l = (provider == LONGEST) ? HitBank : AltBank;
                 primProvLength.insert(l);
-                if (correct) l2stats.tageCorrect++;
+                if (correct) llbpstats.tageCorrect++;
                 else {
-                    l2stats.tageWrong++;
+                    llbpstats.tageWrong++;
                     primMispLength.insert(l);
                 }
                 }
@@ -869,17 +868,17 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
             case LOOP:
             case STC:
-                l2stats.sclProv++;
-                if (correct) l2stats.sclCorrect++;
-                else l2stats.sclWrong++;
+                llbpstats.sclProv++;
+                if (correct) llbpstats.sclCorrect++;
+                else llbpstats.sclWrong++;
                 break;
 
             case BASE:
-                l2stats.baseProv++;
+                llbpstats.baseProv++;
                 if (correct) {
-                    l2stats.baseCorrect++;
+                    llbpstats.baseCorrect++;
                 } else {
-                    l2stats.baseWrong++;
+                    llbpstats.baseWrong++;
                 }
                 break;
             default:
@@ -889,11 +888,11 @@ void LLBP::updateStats(bool resolveDir, bool predDir, uint64_t pc) {
 
     if (llbp.hit && !llbp.isProvider) {
         if (llbp.shorter) {
-            l2stats.l2notBecauseShorter++;
+            llbpstats.l2notBecauseShorter++;
         }
 
         if (!llbp.prefetched) {
-            l2stats.l2notBecauseNotPrefetched++;
+            llbpstats.l2notBecauseNotPrefetched++;
         }
     }
 }
@@ -1131,59 +1130,59 @@ void LLBP::PrintStat(double instr) {
     printf("LLBP branch predictor stats -------\n");
 
     printf("LLBP:: CtxHit:%i(%.4f), PtrnHit:%i(%.4f)\n",
-            l2stats.l2CtxHit, l2stats.l2CtxHit / (double)stats.total,
-            l2stats.l2PtrnHit, l2stats.l2PtrnHit / (double)stats.total
+           llbpstats.l2CtxHit, llbpstats.l2CtxHit / (double)stats.total,
+           llbpstats.l2PtrnHit, llbpstats.l2PtrnHit / (double)stats.total
             );
 
 
     printf("PROVIDER::  BIM:[P:%i(%.4f), C:%i(%.4f), W:%i(%.4f) MPKI:%.4f] \n",
-            l2stats.baseProv, (double)l2stats.baseProv / (double)stats.total,
-            l2stats.baseCorrect, (double)l2stats.baseCorrect / (double)l2stats.baseProv,
-            l2stats.baseWrong, (double)l2stats.baseWrong / (double)l2stats.baseProv,
-            (double)l2stats.baseWrong / (double)instr * 1000
+           llbpstats.baseProv, (double)llbpstats.baseProv / (double)stats.total,
+           llbpstats.baseCorrect, (double)llbpstats.baseCorrect / (double)llbpstats.baseProv,
+           llbpstats.baseWrong, (double)llbpstats.baseWrong / (double)llbpstats.baseProv,
+           (double)llbpstats.baseWrong / (double)instr * 1000
             );
 
     printf("PROVIDER:: TAGE:[P:%i(%.4f), C:%i(%.4f), W:%i(%.4f) MPKI:%.4f], \n",
-            l2stats.tageProv, (double)l2stats.tageProv / (double)stats.total,
-            l2stats.tageCorrect, (double)l2stats.tageCorrect / (double)l2stats.tageProv,
-            l2stats.tageWrong, (double)l2stats.tageWrong / (double)l2stats.tageProv,
-            (double)l2stats.tageWrong / (double)instr * 1000);
+           llbpstats.tageProv, (double)llbpstats.tageProv / (double)stats.total,
+           llbpstats.tageCorrect, (double)llbpstats.tageCorrect / (double)llbpstats.tageProv,
+           llbpstats.tageWrong, (double)llbpstats.tageWrong / (double)llbpstats.tageProv,
+           (double)llbpstats.tageWrong / (double)instr * 1000);
 
     printf("PROVIDER::  SCL:[P:%i(%.4f), C:%i(%.4f), W:%i(%.4f) MPKI:%.4f], \n",
-            l2stats.sclProv, (double)l2stats.sclProv / (double)stats.total,
-            l2stats.sclCorrect, (double)l2stats.sclCorrect / (double)l2stats.sclProv,
-            l2stats.sclWrong, (double)l2stats.sclWrong / (double)l2stats.sclProv,
-            (double)l2stats.sclWrong / (double)instr * 1000);
+           llbpstats.sclProv, (double)llbpstats.sclProv / (double)stats.total,
+           llbpstats.sclCorrect, (double)llbpstats.sclCorrect / (double)llbpstats.sclProv,
+           llbpstats.sclWrong, (double)llbpstats.sclWrong / (double)llbpstats.sclProv,
+           (double)llbpstats.sclWrong / (double)instr * 1000);
 
     printf("PROVIDER:: LLBP:[P:%i(%.4f), C:%i(%.4f), W:%i(%.4f) MPKI:%.4f], \n",
-            l2stats.l2Prov, (double)l2stats.l2Prov / (double)stats.total,
-            l2stats.l2Correct, (double)l2stats.l2Correct / (double)l2stats.l2Prov,
-            l2stats.l2Wrong, (double)l2stats.l2Wrong / (double)l2stats.l2Prov,
-            (double)l2stats.l2Wrong / (double)instr * 1000);
+           llbpstats.l2Prov, (double)llbpstats.l2Prov / (double)stats.total,
+           llbpstats.l2Correct, (double)llbpstats.l2Correct / (double)llbpstats.l2Prov,
+           llbpstats.l2Wrong, (double)llbpstats.l2Wrong / (double)llbpstats.l2Prov,
+           (double)llbpstats.l2Wrong / (double)instr * 1000);
 
 
     printf("LLBP:: CtxHit:%i, PtrnHit:%i, Provider:%i(%.4f), NoProvider:[Shorter:%i(%.4f), NoPrefetch:%i(%.4f)]\n",
-            l2stats.l2CtxHit, l2stats.l2PtrnHit, l2stats.l2Prov, (double)l2stats.l2Prov / (double)l2stats.l2PtrnHit,
-            l2stats.l2notBecauseShorter, (double)l2stats.l2notBecauseShorter / (double)l2stats.l2PtrnHit,
-            l2stats.l2notBecauseNotPrefetched, (double)l2stats.l2notBecauseNotPrefetched / (double)l2stats.l2PtrnHit
+           llbpstats.l2CtxHit, llbpstats.l2PtrnHit, llbpstats.l2Prov, (double)llbpstats.l2Prov / (double)llbpstats.l2PtrnHit,
+           llbpstats.l2notBecauseShorter, (double)llbpstats.l2notBecauseShorter / (double)llbpstats.l2PtrnHit,
+           llbpstats.l2notBecauseNotPrefetched, (double)llbpstats.l2notBecauseNotPrefetched / (double)llbpstats.l2PtrnHit
             );
 
 
     printf("LLBP:: PB Prefetch:[HitInPfq:%i, HitInPB:%i, HitInCI:%i], dropped[locked:%i, misp:%i, btbmiss:%i]\n",
-            l2stats.l2PFHitInQueue, l2stats.l2PFHitInCache, l2stats.l2PFHitInCI, l2stats.pfDroppedLocked, l2stats.pfDroppedMispredict, l2stats.pfDroppedBTBMiss
+           llbpstats.l2PFHitInQueue, llbpstats.l2PFHitInCache, llbpstats.l2PFHitInCI, llbpstats.pfDroppedLocked, llbpstats.pfDroppedMispredict, llbpstats.pfDroppedBTBMiss
             );
 
-    auto tot_evicts = l2stats.l2cacheDirtyEvict + l2stats.l2cacheCleanEvict;
+    auto tot_evicts = llbpstats.l2cacheDirtyEvict + llbpstats.l2cacheCleanEvict;
     printf("LLBP:: PB Evict:[Clean:%i(%.3f) Dirty:%i(%.3f)]\n",
-            l2stats.l2cacheCleanEvict, (double)l2stats.l2cacheCleanEvict / (double)tot_evicts,
-            l2stats.l2cacheDirtyEvict, (double)l2stats.l2cacheDirtyEvict / (double)tot_evicts
+           llbpstats.l2cacheCleanEvict, (double)llbpstats.l2cacheCleanEvict / (double)tot_evicts,
+           llbpstats.l2cacheDirtyEvict, (double)llbpstats.l2cacheDirtyEvict / (double)tot_evicts
             );
 
 
     printf("LLBP:: LLBPHits:[NoOv:%i, SameCorr:%i, SameWrong:%i, GoodOv:%i, BadOv:%i] Alias:[P:%i(%.4f),N:%i(%.4f)]\n",
-            l2stats.l2NoOverride, l2stats.l2OverrideSameCorr, l2stats.l2OverrideSameWrong, l2stats.l2OverrideGood, l2stats.l2OverrideBad,
-            l2stats.ovrPosAlias, l2stats.ovrPosAlias / (double)l2stats.l2Prov,
-            l2stats.ovrNegAlias, l2stats.ovrNegAlias / (double)l2stats.l2Prov
+           llbpstats.l2NoOverride, llbpstats.l2OverrideSameCorr, llbpstats.l2OverrideSameWrong, llbpstats.l2OverrideGood, llbpstats.l2OverrideBad,
+           llbpstats.ovrPosAlias, llbpstats.ovrPosAlias / (double)llbpstats.l2Prov,
+           llbpstats.ovrNegAlias, llbpstats.ovrNegAlias / (double)llbpstats.l2Prov
             );
 
 
@@ -1232,7 +1231,7 @@ void LLBP::PrintStat(double instr) {
 
 void LLBP::resetStats() {
     TageSCL::resetStats();
-    l2stats = {};
+    llbpstats = {};
 
     primMispLength.reset();
     llbpMispLength.reset();
