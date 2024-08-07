@@ -103,7 +103,7 @@ for model in $BRMODELS; do
                 ${FLAGS} \
                 -w ${N_WARM} -n ${N_SIM} \
                 --output "${OUTDIR}/${model}-${POSTFIX}" \
-                > $OUTDIR/${model}-${POSTFIX}.txt 2>&1 &"
+                > $OUTDIR/${model}-${POSTFIX}.txt 2>&1"
 
         commands+=("$CMD")
     done
