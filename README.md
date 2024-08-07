@@ -124,7 +124,7 @@ If you use our work, please cite paper:
 ```
 @inproceedings{schall2024llbp,
   title={The Last-Level Branch Predictor},
-  author={Schall, David and Andreas Sandberg and Boris Grot},
+  author={Schall, David and Sandberg, Andreas and Grot, Boris},
   booktitle={Proceedings of the 57th Annual IEEE/ACM International Symposium on Microarchitecture},
   year={2024}
 }
