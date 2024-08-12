@@ -59,9 +59,7 @@ cmake --build ./build --target predictor -j $(nproc)
 
 
 OUT=results/
-POSTFIX="ae-AlwaysUD"
-POSTFIX="ae-CorrectedNT"
-POSTFIX="ae-New2-noBucket-D5clk"
+POSTFIX="ae"
 
 
 
@@ -115,4 +113,4 @@ echo "Running ${#commands[@]} simulations"
 parallel --jobs $(nproc) ::: "${commands[@]}"
 
 wait
-echo "Simulation complete. Go reap the results, you deserve it!!!!!!"
+echo "Simulation complete."

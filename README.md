@@ -29,11 +29,14 @@ The framework supports a timing approximation by clocking the predictor for ever
 
 ## Prerequisites
 
-The infrastructure has been tested with the following system configuration:
+The infrastructure and following commands have been tested with the following system configuration:
 
 * Ubuntu 22.04.2 LTS
 * gcc 11.4.0
 * cmake 3.22.1
+
+> See the [CI pipeline](https://github.com/dhschall/LLBP/actions/workflows/build-and-run.yml) for other tested system configurations.
+
 
 
 ## Install Dependencies
@@ -62,7 +65,7 @@ cmake --build ./build -j 8
 
 ## Server traces
 
-The traces use to evaluate LLBP collected by running the server applications on gem5 in full-system mode. The OS of the disk image is Ubuntu 20.04 and the kernel version is 5.4.84. The traces are in the [ChampSim](https://github.com/ChampSim/ChampSim) format and contains both user and kernel space instructions. The traces are available on Zenodo at [10.5281/zenodo.13133243](https://doi.org/10.5281/zenodo.13133243).
+The traces use to evaluate LLBP collected by running the server applications on gem5 in full-system mode. The OS of the disk image is Ubuntu 20.04 and the kernel version is 5.4.84. The traces are in the [ChampSim](https://github.com/ChampSim/ChampSim) format and contains both user and kernel space instructions. The traces are available on Zenodo at [10.5281/zenodo.13133242](https://doi.org/10.5281/zenodo.13133242).
 
 The `download_traces.sh` script in the utils folder will download all traces from Zenodo and stores them into the `traces` directory.:
 

@@ -59,30 +59,29 @@ class Histogram {
         panic_if(bs <= 0, "Bucket size must be positive");
 
         buckets.resize(bins + 2);
-        buckets[0] = Bucket{
-            boost::str(boost::format("< %.1f") % lower), 0, 0};
-        buckets[bins + 1] = Bucket{
-            boost::str(boost::format("> %.1f") % upper), 0, 0};
-
-        for (int i = 1; i <= bins; ++i) {
-            if (bs == 1) {
-                buckets[i] = Bucket{
-                    boost::str(boost::format("%d") %
-                        (lower + bs * static_cast<T>(i-1))),
-                    0,
-                    0
-                };
-            } else {
-                buckets[i] = Bucket{
-                    boost::str(boost::format("%.1f-%.1f") %
-                        (lower + bs * static_cast<T>(i-1)) %
-                        (lower + bs * static_cast<T>(i))),
-                    0,
-                    0
-                };
-            }
+        {
+            std::ostringstream oss;
+            oss << "< " << std::fixed << std::setprecision(1) << lower;
+            buckets[0] = Bucket{oss.str(), 0, 0};
+        }
+        {
+            std::ostringstream oss;
+            oss << "> " << std::fixed << std::setprecision(1) << upper;
+            buckets[bins + 1] = Bucket{oss.str(), 0, 0};
         }
 
+        for (int i = 1; i <= bins; ++i) {
+            std::ostringstream oss;
+            if (bs == 1) {
+                oss << (lower + bs * static_cast<T>(i-1));
+                buckets[i] = Bucket{oss.str(), 0, 0};
+            } else {
+                oss << std::fixed << std::setprecision(1)
+                    << (lower + bs * static_cast<T>(i-1)) << "-"
+                    << (lower + bs * static_cast<T>(i));
+                buckets[i] = Bucket{oss.str(), 0, 0};
+            }
+        }
     }
 
     void insert(T value, int count=1) {
@@ -133,27 +132,32 @@ class Histogram {
         }
 
         std::ostringstream res;
-        res << boost::format("N:%d Min:%d, Max:%d, Sum:%d, Avg:%.2f\n")
-            % samples % min % max % sum
-            % getAvg();
+
+        res << "N:" << samples
+            << " Min:" << min
+            << " Max:" << max
+            << " Sum:" << sum
+            << " Avg:" << std::fixed << std::setprecision(2) << getAvg()
+            << "\n";
 
 
         int cum = 0;
         for (const auto& b : buckets) {
             int barLen = _max > 0 ? static_cast<int>((b.count * width + _max / 2) / _max) : 0;
 
-            res << boost::format("%-10s [%-4d]\t") % b.mark % b.count;
+            res << std::left << std::setw(10) << b.mark
+                << " [" << std::setw(4) << b.count << "]\t";
 
             if (perc) {
-                res << boost::format("%.1f%%\t") % (100.0 * b.count / samples);
+                res << std::fixed << std::setprecision(1) << (100.0 * b.count / samples) << "%\t";
             }
 
             if (cdf) {
                 cum += b.count;
-                res << boost::format("%.1f%%\t") % (100.0 * cum / samples);
+                res << std::fixed << std::setprecision(1) << (100.0 * cum / samples) << "%\t";
             }
 
-            res << boost::format("|%s\n") % std::string(barLen, '*');
+            res << "|" << std::string(barLen, '*') << "\n";
 
         }
         return res.str();
