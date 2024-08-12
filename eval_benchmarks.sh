@@ -52,7 +52,7 @@ TRACES="${TRACES} whiskey.426708"
 
 
 
-TRACE_DIR="./tracess"
+TRACE_DIR="./traces"
 OUT=results/
 
 POSTFIX="compare-to-bpu-anaysis-12"
