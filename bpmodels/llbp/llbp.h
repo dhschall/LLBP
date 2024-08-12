@@ -151,8 +151,8 @@ class LLBP : public TageSCL {
             patterns(n, assoc)
         {}
 
-        // Before a pattern in the pattern set is replaced, the patterns are 
-        // sorted from the highest to the lowest confidence. This is done to 
+        // Before a pattern in the pattern set is replaced, the patterns are
+        // sorted from the highest to the lowest confidence. This is done to
         // determine which pattern should be evicted.
         void sortPatters(const uint64_t key) {
             auto& set = patterns.getSet(key);
@@ -171,7 +171,7 @@ class LLBP : public TageSCL {
      * LLBPs high-capacity structure to store all pattern sets.
      * It's implemented as a set associative cache.
      * The Context directory (CD) can be thought of as the tag array while the
-     * LLBPStorage is the data array. In this simulation model, both LLBP 
+     * LLBPStorage is the data array. In this simulation model, both LLBP
      * and CD are represented with a single data structure.
      ********************************************************************/
     class LLBPStorage : public BaseCache<uint64_t, Context>{
@@ -399,8 +399,6 @@ class LLBP : public TageSCL {
     const int numPatterns;
     // Bit width for pattern tag.
     const int TTWidth;
-    // Bit width for context tag.
-    const int CTWidth;
     // Constants for the patterns counter widths
     const int CtrWidth;
     const int ReplCtrWidth;
