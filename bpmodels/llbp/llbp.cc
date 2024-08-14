@@ -278,13 +278,13 @@ bool LLBP::isUseful(bool taken) {
 }
 
 bool LLBP::llbpCorrect(bool taken) {
-    return llbp.isProvider && (taken == llbp.pred);
+    return llbp.hit && (taken == llbp.pred);
 }
 
 bool LLBP::primCorrect(bool taken) {
     return (scl_provider == STC) ? (sc_pred == taken) :
-                    HitBank ? (LongestMatchPred == taken) :
-                    AltBank ? (alttaken == taken) : (bim_pred == taken);
+                         HitBank ? (LongestMatchPred == taken) :
+                         AltBank ? (alttaken == taken) : (bim_pred == taken);
 }
 
 bool LLBP::tageCorrect(bool taken) {
@@ -293,7 +293,7 @@ bool LLBP::tageCorrect(bool taken) {
 }
 
 bool LLBP::llbpUseful(bool taken) {
-    return llbpCorrect(taken) && !primCorrect(taken);
+    return llbp.isProvider && (taken == llbp.pred) && !primCorrect(taken);
 }
 
 void LLBP::updateL2Usefulness(bool taken) {
@@ -310,13 +310,6 @@ void LLBP::updateL2Usefulness(bool taken) {
             if (HitEntry->u < (1 << uwidth) - 1)
                 HitEntry->u++;
         }
-    }
-
-
-    // Same for level 2. If it was the provider and was correct
-    // but level 1 not, it was useful.
-    if (llbp.hit && !llbp.shorter && llbp_correct && !prim_correct) {
-        ctrupdate(llbpEntry->replace, true, ReplCtrWidth);
     }
 }
 
@@ -491,7 +484,6 @@ void LLBP::llbpUpdate(uint64_t pc, bool resolveDir, bool predDir) {
         // - If a pattern becomes low confident (incorrect prediction)
         //   the replacement counter is decreased
         if (llbpEntry->ctr == (resolveDir ? 1 : -2)) {
-        // else if (llbpEntry->ctr == (resolveDir ? 2 : -3)) {
             // entry became medium confident
             ctrupdate(HitContext->replace, true, CtxReplCtrWidth);
         }

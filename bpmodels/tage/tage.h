@@ -122,15 +122,14 @@ class TageBase : public BasePredictor {
 
     // the counter(s) to chose between longest match and alternate prediction on
     // TAGE when weak counters
-    static const int log_size_use_alt = 4;
     unsigned tageConf; // Different confidence levels
     unsigned baseConf;
     unsigned altConf;
     int provVal;
     // For chooser between alt and longest match
     const int alt_width = 5;
-    static const int size_use_alt = (1 << (log_size_use_alt));
-    int8_t use_alt_on_na[size_use_alt];
+    const int size_use_alt;
+    int8_t use_alt_on_na[10]; // 10 is not the actual size, but the maximum.
 
     int TICK;  // for the reset of the u counter
 
@@ -317,7 +316,7 @@ class TageBase : public BasePredictor {
 struct TageConfig {
 
     int nhist = 36;
-    int minhist = 4;
+    int minhist = 6;
     int maxhist = 3000;
     int LogG = 10;
     int LogB = 13;
@@ -363,7 +362,6 @@ class Tage64k : public TageBase {
     Tage64k(void)
         : TageBase(Tage64kConfig) {}
 };
-
 
 
 

@@ -38,7 +38,7 @@ using namespace std;
 
 #define COND (stats.total >= 00000)
 
-#define USEPATH 1
+#define USEPATH
 
 namespace LLBP {
 
@@ -58,7 +58,7 @@ TageBase::TageBase(TageConfig cfg)
         Tbits(cfg.Tbits),
         uwidth(cfg.uwidth),
         cwidth(cfg.cwidth),
-        // size_use_alt(1 << (cfg.log_size_use_alt)),
+        size_use_alt(1 << (cfg.log_size_use_alt)),
         ghr(histbufferlen),
         disableInterleaving(cfg.disableInterleaving)
 {
@@ -214,7 +214,7 @@ int TageBase::predictorsize() {
 
     printf("nhist= %d; MInhist= %d; MAXHIST= %d; STORAGESIZE= %d, %dKB; "
             "NBENTRY= %d\n",
-            nhist, minhist, minhist, STORAGESIZE, STORAGESIZE / 1024, NBENTRY);
+            nhist, minhist, maxhist, STORAGESIZE, STORAGESIZE / 1024, NBENTRY);
 
     return (STORAGESIZE);
 }
@@ -271,7 +271,7 @@ int TageBase::gindex(unsigned int PC, int bank) {
 
 
 #ifdef USEPATH
-    int M = (m[bank] > 16) ? 16 : m[bank];
+    int M = (m[bank] > phistwidth) ? phistwidth : m[bank];
     index ^= F(phist, M, bank);
 #endif
 
@@ -317,6 +317,7 @@ bool TageBase::predict(uint64_t PC) {
 
     // 2. The TAGE prediction
     tagePredict(PC);
+    provider = tage_provider;
     return tage_pred;
 }
 
@@ -332,7 +333,7 @@ void TageBase::calcIndicesAndTags(uint64_t PC) {
     }
 
 
-    int T = (PC) % nbankhigh;
+    int T = (PC ^ (phist & ((1 << m[born]) - 1))) % nbankhigh;
     T = disableInterleaving ? 1 : T;
 
     for (int i = born; i <= nhist; i++)
@@ -342,7 +343,7 @@ void TageBase::calcIndicesAndTags(uint64_t PC) {
             T = T % nbankhigh;
         }
 
-    T = (PC) % nbanklow;
+    T = (PC ^ (phist & ((1 << m[1]) - 1))) % nbanklow;
     T = disableInterleaving ? 1 : T;
 
     for (int i = 1; i <= born - 1; i++)
@@ -435,25 +436,35 @@ void TageBase::tagePredict(uint64_t PC) {
 
 void TageBase::updateHistory(const uint64_t pc, const bool taken,
                                 const OpType opType, const uint64_t target) {
-    int historyBits = taken;
+
+    bool indirect = (opType == OPTYPE_CALL_INDIRECT_COND) ||
+                    (opType == OPTYPE_CALL_INDIRECT_UNCOND) ||
+                    (opType == OPTYPE_JMP_INDIRECT_COND) ||
+                    (opType == OPTYPE_JMP_INDIRECT_UNCOND) ||
+                    (opType == OPTYPE_RET_COND) ||
+                    (opType == OPTYPE_RET_UNCOND);
+
+    int tbits = indirect ? nHistBits+1 : nHistBits;
+
+    int historyBits = taken ? 1 : 0;
     if (nHistBits > 1) {
         historyBits ^= pc ^ (pc >> 2);
     }
-    if (takenHistory) {
-        // don't update the history if the branch was not taken
-        if (!taken) {
-            return;
-        }
-        historyBits = (pc >> 2) ^ (target >> 3);
-    }
-
     ghr_l = (ghr_l << 1) | (taken & 1);
+    int PATH = pc ^ (pc >> 2) ^ (pc >> 4);
 
-    for (int t = 0; t < nHistBits; t++) {
+    for (int t = 0; t < tbits; t++) {
         // update  history
+
         bool brDir = (historyBits & 1);
         updateGHist(brDir);
         historyBits >>= 1;
+#ifdef USEPATH
+        int PATHBIT = (PATH & 127);
+        PATH >>= 1;
+        phist = (phist << 1) ^ PATHBIT;
+        phist &= (1<<phistwidth)-1;
+#endif
     }
 }
 
@@ -469,7 +480,7 @@ void TageBase::updateGHist(const bool bit) {
 
 
 int TageBase::idxChooser() {
-    bool add1 = (altConf == LowConf);
+    bool add1 = (altConf != LowConf);
     return ((((HitBank - 1) / 8) << 1) + add1) % (size_use_alt - 1);
 }
 
@@ -481,8 +492,9 @@ unsigned TageBase::chooseProvider() {
     // low) and USE_ALT_ON_NA is positive  use the alternate prediction
 
     // If the longest is somehow certain use its prediction.
-    if (tageConf != LowConf)
+    if (tageConf != LowConf) {
         return LONGEST;
+    }
 
     // Use on low confidence if the USE_ALT_ON_NA is negative
     if (use_alt_on_na[idxChooser()] < 0) {
@@ -547,7 +559,7 @@ TageBase::allocateTables(int nalloc, uint64_t PC, bool resolveDir) {
 
     // T is the number of entries additionally allocated to at
     // least one entry per missprediction.
-    int T = nalloc -1;
+    int T = nalloc - 1;
 
     int A = 1;
     if ((MYRANDOM() & 127) < 32) A = 2;
